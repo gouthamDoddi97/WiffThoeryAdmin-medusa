@@ -67,6 +67,7 @@ const CollectionBackgroundWidget = ({ data }: { data: AdminCollection }) => {
       return
     }
 
+    const isMobile = field === "mobile_image_url"
     isMobile ? setUploadingMobile(true) : setUploading(true)
     try {
       const formData = new FormData()
