@@ -14,12 +14,8 @@ COPY . .
 # Build Medusa backend + admin dashboard
 RUN npx medusa build
 
-# Install production deps inside the built server output
-RUN cd .medusa/server && npm install --legacy-peer-deps
-
 EXPOSE 9000
 
 ENV NODE_ENV=production
 
-# Run from source root so medusa recognises the project
 CMD ["npx", "medusa", "start"]
