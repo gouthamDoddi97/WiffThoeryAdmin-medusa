@@ -28,6 +28,10 @@ module.exports = defineConfig({
               region: "auto",
               bucket: process.env.S3_BUCKET,
               endpoint: process.env.S3_ENDPOINT,
+              additional_client_config: {
+                requestChecksumCalculation: "WHEN_REQUIRED",
+                responseChecksumValidation: "WHEN_REQUIRED",
+              },
             },
           },
         ],
