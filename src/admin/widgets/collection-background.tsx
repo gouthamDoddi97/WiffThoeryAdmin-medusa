@@ -60,14 +60,9 @@ const CollectionBackgroundWidget = ({ data }: { data: AdminCollection }) => {
     const file = e.target.files?.[0]
     if (!file) return
 
-    const isMobile = field === "mobile_image_url"
     const isVideo = file.type.startsWith("video/") || file.name.endsWith(".webm")
     const isImage = file.type.startsWith("image/")
-    if (isMobile && !isImage) {
-      toast.error("Mobile image must be an image file")
-      return
-    }
-    if (!isMobile && !isVideo && !isImage) {
+    if (!isVideo && !isImage) {
       toast.error("Only image or .webm video files are supported")
       return
     }
@@ -196,7 +191,7 @@ const CollectionBackgroundWidget = ({ data }: { data: AdminCollection }) => {
 
       {/* Mobile image */}
       <div className="flex flex-col gap-y-2">
-        <Label htmlFor="mobile-upload">Mobile image (portrait, shown on small screens)</Label>
+        <Label htmlFor="mobile-upload">Mobile background (portrait image or .webm, shown on small screens)</Label>
         {background.mobile_image_url && (
           <img
             src={background.mobile_image_url}
@@ -208,7 +203,7 @@ const CollectionBackgroundWidget = ({ data }: { data: AdminCollection }) => {
           id="mobile-upload"
           ref={mobileFileInputRef}
           type="file"
-          accept="image/*"
+          accept="image/*,video/webm,.webm"
           onChange={(e) => handleFileUpload(e, "mobile_image_url")}
           disabled={uploadingMobile}
           className="text-sm text-ui-fg-base file:mr-4 file:py-1 file:px-3 file:rounded file:border-0 file:text-sm file:bg-ui-bg-subtle file:text-ui-fg-base hover:file:bg-ui-bg-base cursor-pointer"
