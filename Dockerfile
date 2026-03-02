@@ -18,4 +18,4 @@ EXPOSE 9000
 
 ENV NODE_ENV=production
 
-CMD ["npx", "medusa", "start"]
+CMD ["sh", "-c", "cd /app/.medusa/server && npx medusa start"]
