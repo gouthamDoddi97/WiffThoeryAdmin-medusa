@@ -4,6 +4,7 @@ import CollectionBackgroundModuleService from "../../../../../modules/collection
 
 type BackgroundBody = {
   file_url: string
+  mobile_image_url?: string
   badge?: string
   description?: string
   font_color_palette?: string
@@ -43,7 +44,7 @@ export async function POST(
   const service: CollectionBackgroundModuleService =
     req.scope.resolve(COLLECTION_BACKGROUND_MODULE)
 
-  const { file_url, badge, description, font_color_palette } = req.body
+  const { file_url, mobile_image_url, badge, description, font_color_palette } = req.body
 
   const [existing] = await service.listCollectionBackgrounds({ collection_id: id })
 
@@ -52,6 +53,7 @@ export async function POST(
     background = await service.updateCollectionBackgrounds({
       id: existing.id,
       file_url,
+      mobile_image_url,
       badge,
       description,
       font_color_palette,
@@ -60,6 +62,7 @@ export async function POST(
     background = await service.createCollectionBackgrounds({
       collection_id: id,
       file_url,
+      mobile_image_url,
       badge,
       description,
       font_color_palette,

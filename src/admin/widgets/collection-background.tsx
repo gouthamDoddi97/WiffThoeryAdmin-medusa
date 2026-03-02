@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react"
 
 type CollectionBackground = {
   file_url: string
+  mobile_image_url: string
   badge: string
   description: string
   font_color_palette: string
@@ -11,6 +12,7 @@ type CollectionBackground = {
 
 const defaultBackground: CollectionBackground = {
   file_url: "",
+  mobile_image_url: "",
   badge: "",
   description: "",
   font_color_palette: "light",
@@ -25,9 +27,11 @@ const CollectionBackgroundWidget = ({ data }: { data: AdminCollection }) => {
   const [background, setBackground] = useState<CollectionBackground>(defaultBackground)
   const [loading, setLoading] = useState(true)
   const [uploading, setUploading] = useState(false)
+  const [uploadingMobile, setUploadingMobile] = useState(false)
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const mobileFileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     fetch(`/admin/collections/${data.id}/background`, { credentials: "include" })
@@ -36,6 +40,7 @@ const CollectionBackgroundWidget = ({ data }: { data: AdminCollection }) => {
         if (collection_background) {
           setBackground({
             file_url: collection_background.file_url ?? "",
+            mobile_image_url: collection_background.mobile_image_url ?? "",
             badge: collection_background.badge ?? "",
             description: collection_background.description ?? "",
             font_color_palette: collection_background.font_color_palette ?? "light",
@@ -51,18 +56,23 @@ const CollectionBackgroundWidget = ({ data }: { data: AdminCollection }) => {
     setBackground((prev) => ({ ...prev, [e.target.name]: e.target.value }))
   }
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>, field: "file_url" | "mobile_image_url" = "file_url") => {
     const file = e.target.files?.[0]
     if (!file) return
 
+    const isMobile = field === "mobile_image_url"
     const isVideo = file.type.startsWith("video/") || file.name.endsWith(".webm")
     const isImage = file.type.startsWith("image/")
-    if (!isVideo && !isImage) {
+    if (isMobile && !isImage) {
+      toast.error("Mobile image must be an image file")
+      return
+    }
+    if (!isMobile && !isVideo && !isImage) {
       toast.error("Only image or .webm video files are supported")
       return
     }
 
-    setUploading(true)
+    isMobile ? setUploadingMobile(true) : setUploading(true)
     try {
       const formData = new FormData()
       formData.append("files", file)
@@ -80,13 +90,14 @@ const CollectionBackgroundWidget = ({ data }: { data: AdminCollection }) => {
 
       if (!fileUrl) throw new Error("No file URL returned")
 
-      setBackground((prev) => ({ ...prev, file_url: fileUrl }))
+      setBackground((prev) => ({ ...prev, [field]: fileUrl }))
       toast.success("File uploaded — click Save to persist")
     } catch (err) {
       toast.error("Upload failed")
     } finally {
-      setUploading(false)
-      if (fileInputRef.current) fileInputRef.current.value = ""
+      isMobile ? setUploadingMobile(false) : setUploading(false)
+      const ref = isMobile ? mobileFileInputRef : fileInputRef
+      if (ref.current) ref.current.value = ""
     }
   }
 
@@ -174,11 +185,35 @@ const CollectionBackgroundWidget = ({ data }: { data: AdminCollection }) => {
           ref={fileInputRef}
           type="file"
           accept="image/*,video/webm,.webm"
-          onChange={handleFileUpload}
+          onChange={(e) => handleFileUpload(e, "file_url")}
           disabled={uploading}
           className="text-sm text-ui-fg-base file:mr-4 file:py-1 file:px-3 file:rounded file:border-0 file:text-sm file:bg-ui-bg-subtle file:text-ui-fg-base hover:file:bg-ui-bg-base cursor-pointer"
         />
         {uploading && (
+          <p className="text-ui-fg-subtle text-xs">Uploading…</p>
+        )}
+      </div>
+
+      {/* Mobile image */}
+      <div className="flex flex-col gap-y-2">
+        <Label htmlFor="mobile-upload">Mobile image (portrait, shown on small screens)</Label>
+        {background.mobile_image_url && (
+          <img
+            src={background.mobile_image_url}
+            alt="Mobile background"
+            className="w-32 rounded-lg object-cover"
+          />
+        )}
+        <input
+          id="mobile-upload"
+          ref={mobileFileInputRef}
+          type="file"
+          accept="image/*"
+          onChange={(e) => handleFileUpload(e, "mobile_image_url")}
+          disabled={uploadingMobile}
+          className="text-sm text-ui-fg-base file:mr-4 file:py-1 file:px-3 file:rounded file:border-0 file:text-sm file:bg-ui-bg-subtle file:text-ui-fg-base hover:file:bg-ui-bg-base cursor-pointer"
+        />
+        {uploadingMobile && (
           <p className="text-ui-fg-subtle text-xs">Uploading…</p>
         )}
       </div>
