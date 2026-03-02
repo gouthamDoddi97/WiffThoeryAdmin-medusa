@@ -14,11 +14,12 @@ COPY . .
 # Build Medusa backend + admin dashboard
 RUN npx medusa build
 
-# Remove dev deps after build to slim down the image
-RUN npm prune --production --legacy-peer-deps
+# Install production deps inside the built server output
+WORKDIR /app/.medusa/server
+RUN npm install --legacy-peer-deps
 
 EXPOSE 9000
 
 ENV NODE_ENV=production
 
-CMD ["npx", "medusa", "start"]
+CMD ["node", "index.js"]
