@@ -15,6 +15,21 @@ module.exports = defineConfig({
   },
   modules: [
     {
+      resolve: "@medusajs/medusa/file",
+      options: {
+        providers: [
+          {
+            resolve: "@medusajs/medusa/file-local",
+            id: "local",
+            options: {
+              upload_dir: "uploads",
+              backend_url: process.env.BACKEND_URL,
+            },
+          },
+        ],
+      },
+    },
+    {
       resolve: "./src/modules/perfume-details",
     },
     {
