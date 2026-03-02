@@ -15,18 +15,14 @@ module.exports = defineConfig({
   },
   modules: [
     {
-      resolve: "@medusajs/medusa/file",
+      resolve: "@medusajs/file-s3",
       options: {
-        providers: [
-          {
-            resolve: "@medusajs/medusa/file-local",
-            id: "local",
-            options: {
-              upload_dir: "uploads",
-              backend_url: process.env.BACKEND_URL,
-            },
-          },
-        ],
+        file_url: process.env.S3_FILE_URL,
+        access_key_id: process.env.S3_ACCESS_KEY_ID,
+        secret_access_key: process.env.S3_SECRET_ACCESS_KEY,
+        region: "auto",
+        bucket: process.env.S3_BUCKET,
+        endpoint: process.env.S3_ENDPOINT,
       },
     },
     {
