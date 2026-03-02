@@ -15,11 +15,11 @@ COPY . .
 RUN npx medusa build
 
 # Install production deps inside the built server output
-WORKDIR /app/.medusa/server
-RUN npm install --legacy-peer-deps
+RUN cd .medusa/server && npm install --legacy-peer-deps
 
 EXPOSE 9000
 
 ENV NODE_ENV=production
 
+# Run from source root so medusa recognises the project
 CMD ["npx", "medusa", "start"]
