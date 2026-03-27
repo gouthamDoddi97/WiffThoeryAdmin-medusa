@@ -43,5 +43,11 @@ module.exports = defineConfig({
     {
       resolve: "./src/modules/collection-background",
     },
+    {
+      resolve: "./src/modules/collection-tier",
+    },
+    {
+      resolve: "./src/modules/ugc-gallery",
+    },
   ],
 })
