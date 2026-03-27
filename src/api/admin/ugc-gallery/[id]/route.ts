@@ -9,7 +9,7 @@ export async function DELETE(
   const { id } = req.params
   const service: UgcGalleryModuleService = req.scope.resolve(UGC_GALLERY_MODULE)
 
-  await service.deleteUgcGalleryPhotos(id)
+  await service.deleteUgcGalleryPhotoes(id)
 
   res.json({ deleted: true, id })
 }

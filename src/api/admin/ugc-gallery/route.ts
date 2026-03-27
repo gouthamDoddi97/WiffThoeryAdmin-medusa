@@ -16,7 +16,7 @@ export async function GET(
 ): Promise<void> {
   const service: UgcGalleryModuleService = req.scope.resolve(UGC_GALLERY_MODULE)
 
-  const photos = await service.listUgcGalleryPhotos(
+  const photos = await service.listUgcGalleryPhotoes(
     {},
     { order: { sort_order: "ASC" }, take: 20 }
   )
@@ -36,7 +36,7 @@ export async function POST(
 
   let photo
   if (id) {
-    photo = await service.updateUgcGalleryPhotos({
+    photo = await service.updateUgcGalleryPhotoes({
       id,
       image_url,
       alt_text,
@@ -44,7 +44,7 @@ export async function POST(
       is_active,
     })
   } else {
-    photo = await service.createUgcGalleryPhotos({
+    photo = await service.createUgcGalleryPhotoes({
       image_url,
       alt_text,
       sort_order,

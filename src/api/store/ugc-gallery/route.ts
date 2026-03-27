@@ -8,7 +8,7 @@ export async function GET(
 ): Promise<void> {
   const service: UgcGalleryModuleService = req.scope.resolve(UGC_GALLERY_MODULE)
 
-  const photos = await service.listUgcGalleryPhotos(
+  const photos = await service.listUgcGalleryPhotoes(
     { is_active: true },
     { order: { sort_order: "ASC" }, take: 5 }
   )
