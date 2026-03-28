@@ -16,6 +16,8 @@ type PerfumeDetails = {
   license_no: string
   expiry_info: string
   customer_care: string
+  sillage: string
+  longevity: string
 }
 
 const defaultDetails: PerfumeDetails = {
@@ -31,6 +33,8 @@ const defaultDetails: PerfumeDetails = {
   license_no: "",
   expiry_info: "",
   customer_care: "",
+  sillage: "",
+  longevity: "",
 }
 
 const PerfumeDetailsWidget = ({ data }: { data: AdminProduct }) => {
@@ -58,6 +62,8 @@ const PerfumeDetailsWidget = ({ data }: { data: AdminProduct }) => {
             license_no: perfume_details.license_no ?? "",
             expiry_info: perfume_details.expiry_info ?? "",
             customer_care: perfume_details.customer_care ?? "",
+            sillage: perfume_details.sillage ?? "",
+            longevity: perfume_details.longevity ?? "",
           })
         }
       })
@@ -68,6 +74,10 @@ const PerfumeDetailsWidget = ({ data }: { data: AdminProduct }) => {
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
   ) => {
     setDetails((prev) => ({ ...prev, [e.target.name]: e.target.value }))
+  }
+
+  const handleSelectChange = (name: keyof PerfumeDetails, value: string) => {
+    setDetails((prev) => ({ ...prev, [name]: value }))
   }
 
   const handleSave = async () => {
@@ -244,6 +254,43 @@ const PerfumeDetailsWidget = ({ data }: { data: AdminProduct }) => {
             value={details.customer_care}
             onChange={handleChange}
           />
+        </div>
+      </div>
+
+      {/* Performance */}
+      <div className="flex flex-col gap-y-2">
+        <Label size="small" className="font-semibold">Performance</Label>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div className="flex flex-col gap-y-1">
+            <Label htmlFor="sillage" size="small">Sillage (Projection)</Label>
+            <select
+              id="sillage"
+              name="sillage"
+              value={details.sillage}
+              onChange={(e) => handleSelectChange("sillage", e.target.value)}
+              className="h-8 w-full rounded-md border border-ui-border-base bg-ui-bg-base px-3 py-1 text-sm text-ui-fg-base focus:outline-none focus:ring-1 focus:ring-ui-border-interactive [&>option]:bg-[#1a1a1a] [&>option]:text-white"
+            >
+              <option value="" className="bg-[#1a1a1a] text-white">— Select —</option>
+              <option value="low" className="bg-[#1a1a1a] text-white">Low</option>
+              <option value="medium" className="bg-[#1a1a1a] text-white">Medium</option>
+              <option value="high" className="bg-[#1a1a1a] text-white">High</option>
+            </select>
+          </div>
+          <div className="flex flex-col gap-y-1">
+            <Label htmlFor="longevity" size="small">Longevity (Lasting Power)</Label>
+            <select
+              id="longevity"
+              name="longevity"
+              value={details.longevity}
+              onChange={(e) => handleSelectChange("longevity", e.target.value)}
+              className="h-8 w-full rounded-md border border-ui-border-base bg-ui-bg-base px-3 py-1 text-sm text-ui-fg-base focus:outline-none focus:ring-1 focus:ring-ui-border-interactive [&>option]:bg-[#1a1a1a] [&>option]:text-white"
+            >
+              <option value="" className="bg-[#1a1a1a] text-white">— Select —</option>
+              <option value="low" className="bg-[#1a1a1a] text-white">Low</option>
+              <option value="medium" className="bg-[#1a1a1a] text-white">Medium</option>
+              <option value="high" className="bg-[#1a1a1a] text-white">High</option>
+            </select>
+          </div>
         </div>
       </div>
 

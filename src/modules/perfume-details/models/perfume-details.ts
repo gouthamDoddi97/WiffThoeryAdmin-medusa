@@ -15,6 +15,8 @@ const PerfumeDetails = model.define("perfume_details", {
   license_no: model.text().nullable(),
   expiry_info: model.text().nullable(),
   customer_care: model.text().nullable(),
+  sillage: model.text().nullable(),    // "low" | "medium" | "high"
+  longevity: model.text().nullable(),  // "low" | "medium" | "high"
 })
 
 export default PerfumeDetails

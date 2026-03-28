@@ -15,6 +15,8 @@ type PerfumeDetailsBody = {
   license_no?: string
   expiry_info?: string
   customer_care?: string
+  sillage?: string
+  longevity?: string
 }
 
 export async function GET(
