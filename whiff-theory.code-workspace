@@ -1,0 +1,13 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "../whiff-theory-storefront"
+		}
+	],
+	"settings": {
+		"powershell.cwd": "whiff-theory-storefront"
+	}
+}

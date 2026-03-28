@@ -1,15 +1,15 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework"
 import { UGC_GALLERY_MODULE } from "../../../../modules/ugc-gallery"
-import UgcGalleryModuleService from "../../../../modules/ugc-gallery/service"
 
 export async function DELETE(
   req: MedusaRequest,
   res: MedusaResponse
 ): Promise<void> {
   const { id } = req.params
-  const service: UgcGalleryModuleService = req.scope.resolve(UGC_GALLERY_MODULE)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const service = req.scope.resolve(UGC_GALLERY_MODULE) as any
 
-  await service.deleteUgcGalleryPhotoes(id)
+  await service.deleteUgcGalleryPhotos(id)
 
   res.json({ deleted: true, id })
 }
