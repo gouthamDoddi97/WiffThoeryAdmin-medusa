@@ -17,6 +17,7 @@ const PerfumeDetails = model.define("perfume_details", {
   customer_care: model.text().nullable(),
   sillage: model.text().nullable(),    // "low" | "medium" | "high"
   longevity: model.text().nullable(),  // "low" | "medium" | "high"
+  occasions: model.text().nullable(), // comma-separated e.g. "day,evening,office"
 })
 
 export default PerfumeDetails

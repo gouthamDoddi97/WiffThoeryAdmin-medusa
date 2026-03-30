@@ -17,6 +17,7 @@ type PerfumeDetailsBody = {
   customer_care?: string
   sillage?: string
   longevity?: string
+  occasions?: string
 }
 
 export async function GET(

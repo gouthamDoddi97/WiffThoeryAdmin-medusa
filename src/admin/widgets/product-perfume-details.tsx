@@ -18,6 +18,7 @@ type PerfumeDetails = {
   customer_care: string
   sillage: string
   longevity: string
+  occasions: string
 }
 
 const defaultDetails: PerfumeDetails = {
@@ -35,6 +36,7 @@ const defaultDetails: PerfumeDetails = {
   customer_care: "",
   sillage: "",
   longevity: "",
+  occasions: "",
 }
 
 const PerfumeDetailsWidget = ({ data }: { data: AdminProduct }) => {
@@ -64,6 +66,7 @@ const PerfumeDetailsWidget = ({ data }: { data: AdminProduct }) => {
             customer_care: perfume_details.customer_care ?? "",
             sillage: perfume_details.sillage ?? "",
             longevity: perfume_details.longevity ?? "",
+            occasions: perfume_details.occasions ?? "",
           })
         }
       })
@@ -78,6 +81,16 @@ const PerfumeDetailsWidget = ({ data }: { data: AdminProduct }) => {
 
   const handleSelectChange = (name: keyof PerfumeDetails, value: string) => {
     setDetails((prev) => ({ ...prev, [name]: value }))
+  }
+
+  const handleOccasionToggle = (value: string) => {
+    setDetails((prev) => {
+      const current = prev.occasions.split(",").map((s) => s.trim()).filter(Boolean)
+      const updated = current.includes(value)
+        ? current.filter((o) => o !== value)
+        : [...current, value]
+      return { ...prev, occasions: updated.join(",") }
+    })
   }
 
   const handleSave = async () => {
@@ -291,6 +304,38 @@ const PerfumeDetailsWidget = ({ data }: { data: AdminProduct }) => {
               <option value="high" className="bg-[#1a1a1a] text-white">High</option>
             </select>
           </div>
+        </div>
+      </div>
+
+      {/* When To Wear */}
+      <div className="flex flex-col gap-y-2">
+        <Label size="small" className="font-semibold">When To Wear</Label>
+        <p className="text-ui-fg-muted text-xs">Select all occasions that suit this fragrance</p>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+          {([
+            { value: "day", label: "Day" },
+            { value: "evening", label: "Evening" },
+            { value: "summer", label: "Summer" },
+            { value: "winter", label: "Winter" },
+            { value: "rainy", label: "Rainy" },
+            { value: "office", label: "Office" },
+            { value: "date", label: "Date Night" },
+            { value: "gentle", label: "Gentle" },
+            { value: "strong", label: "Strong / Bold" },
+          ] as const).map(({ value, label }) => {
+            const selected = details.occasions.split(",").map((s) => s.trim()).filter(Boolean).includes(value)
+            return (
+              <label key={value} className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={selected}
+                  onChange={() => handleOccasionToggle(value)}
+                  className="h-4 w-4 rounded border-ui-border-base accent-ui-fg-interactive"
+                />
+                <span className="text-sm text-ui-fg-base">{label}</span>
+              </label>
+            )
+          })}
         </div>
       </div>
 
