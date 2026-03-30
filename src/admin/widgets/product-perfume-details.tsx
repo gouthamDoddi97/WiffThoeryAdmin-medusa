@@ -19,6 +19,7 @@ type PerfumeDetails = {
   sillage: string
   longevity: string
   occasions: string
+  scent_weight: number
 }
 
 const defaultDetails: PerfumeDetails = {
@@ -37,6 +38,7 @@ const defaultDetails: PerfumeDetails = {
   sillage: "",
   longevity: "",
   occasions: "",
+  scent_weight: 5,
 }
 
 const PerfumeDetailsWidget = ({ data }: { data: AdminProduct }) => {
@@ -67,6 +69,7 @@ const PerfumeDetailsWidget = ({ data }: { data: AdminProduct }) => {
             sillage: perfume_details.sillage ?? "",
             longevity: perfume_details.longevity ?? "",
             occasions: perfume_details.occasions ?? "",
+            scent_weight: perfume_details.scent_weight ?? 5,
           })
         }
       })
@@ -305,6 +308,58 @@ const PerfumeDetailsWidget = ({ data }: { data: AdminProduct }) => {
             </select>
           </div>
         </div>
+
+        {/* Scent Weight slider */}
+        <div className="flex flex-col gap-y-2 pt-2">
+          <div className="flex items-center justify-between">
+            <Label size="small">Scent Weight</Label>
+            <span className="text-xs text-ui-fg-subtle font-mono">
+              {details.scent_weight} / 10 &mdash;&nbsp;
+              {details.scent_weight <= 2
+                ? "Very Light"
+                : details.scent_weight <= 4
+                ? "Light"
+                : details.scent_weight <= 6
+                ? "Medium"
+                : details.scent_weight <= 8
+                ? "Heavy"
+                : "Very Heavy"}
+            </span>
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="text-xs text-ui-fg-muted w-12 text-right">Light</span>
+            <input
+              type="range"
+              min={1}
+              max={10}
+              step={1}
+              value={details.scent_weight}
+              onChange={(e) =>
+                setDetails((prev) => ({ ...prev, scent_weight: Number(e.target.value) }))
+              }
+              className="flex-1 h-1.5 rounded-full accent-ui-fg-interactive cursor-pointer"
+              style={{
+                background: `linear-gradient(to right, var(--color-ui-fg-interactive, #4FDBCC) 0%, var(--color-ui-fg-interactive, #4FDBCC) ${
+                  ((details.scent_weight - 1) / 9) * 100
+                }%, var(--color-ui-border-base, #3f3f3f) ${
+                  ((details.scent_weight - 1) / 9) * 100
+                }%, var(--color-ui-border-base, #3f3f3f) 100%)`,
+              }}
+            />
+            <span className="text-xs text-ui-fg-muted w-12">Heavy</span>
+          </div>
+          <div className="flex justify-between px-12">
+            {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((v) => (
+              <span
+                key={v}
+                className="text-[9px] text-ui-fg-muted cursor-pointer select-none"
+                onClick={() => setDetails((prev) => ({ ...prev, scent_weight: v }))}
+              >
+                {v}
+              </span>
+            ))}
+          </div>
+        </div>
       </div>
 
       {/* When To Wear */}
@@ -320,8 +375,7 @@ const PerfumeDetailsWidget = ({ data }: { data: AdminProduct }) => {
             { value: "rainy", label: "Rainy" },
             { value: "office", label: "Office" },
             { value: "date", label: "Date Night" },
-            { value: "gentle", label: "Gentle" },
-            { value: "strong", label: "Strong / Bold" },
+
           ] as const).map(({ value, label }) => {
             const selected = details.occasions.split(",").map((s) => s.trim()).filter(Boolean).includes(value)
             return (

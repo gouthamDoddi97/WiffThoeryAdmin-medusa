@@ -15,9 +15,10 @@ const PerfumeDetails = model.define("perfume_details", {
   license_no: model.text().nullable(),
   expiry_info: model.text().nullable(),
   customer_care: model.text().nullable(),
-  sillage: model.text().nullable(),    // "low" | "medium" | "high"
-  longevity: model.text().nullable(),  // "low" | "medium" | "high"
-  occasions: model.text().nullable(), // comma-separated e.g. "day,evening,office"
+  sillage: model.text().nullable(),        // "low" | "medium" | "high"
+  longevity: model.text().nullable(),      // "low" | "medium" | "high"
+  occasions: model.text().nullable(),      // comma-separated e.g. "day,evening,office"
+  scent_weight: model.number().nullable(), // 1–10, light → heavy
 })
 
 export default PerfumeDetails
