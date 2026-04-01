@@ -1,9 +1,15 @@
 import { AbstractNotificationProviderService } from "@medusajs/framework/utils"
 import { Logger } from "@medusajs/framework/types"
-import * as nodemailer from "nodemailer"
 import { orderConfirmedTemplate } from "./templates/order-confirmed"
 import { passwordResetTemplate } from "./templates/password-reset"
 import { welcomeTemplate } from "./templates/welcome"
+
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const nodemailer = require("nodemailer") as {
+  createTransport: (opts: Record<string, unknown>) => {
+    sendMail: (msg: Record<string, unknown>) => Promise<{ messageId: string }>
+  }
+}
 
 type Options = {
   from: string
@@ -23,7 +29,7 @@ type InjectedDependencies = {
 class NodemailerNotificationService extends AbstractNotificationProviderService {
   static identifier = "nodemailer"
 
-  private transporter: nodemailer.Transporter
+  private transporter: ReturnType<typeof nodemailer.createTransport>
   private from: string
   private logger: Logger
 
