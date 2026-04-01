@@ -49,5 +49,30 @@ module.exports = defineConfig({
     {
       resolve: "./src/modules/ugc-gallery",
     },
+    {
+      resolve: "./src/modules/product-reviews",
+    },
+    {
+      resolve: "@medusajs/medusa/notification",
+      options: {
+        providers: [
+          {
+            resolve: "./src/modules/email-notifications",
+            id: "nodemailer",
+            options: {
+              channels: ["email"],
+              from: process.env.SMTP_FROM,
+              host: process.env.SMTP_HOST,
+              port: Number(process.env.SMTP_PORT ?? 587),
+              secure: process.env.SMTP_SECURE === "true",
+              auth: {
+                user: process.env.SMTP_USER,
+                pass: process.env.SMTP_PASS,
+              },
+            },
+          },
+        ],
+      },
+    },
   ],
 })

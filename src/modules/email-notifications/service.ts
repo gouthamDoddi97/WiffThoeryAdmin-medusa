@@ -1,0 +1,92 @@
+import { AbstractNotificationProviderService } from "@medusajs/framework/utils"
+import { Logger } from "@medusajs/framework/types"
+import * as nodemailer from "nodemailer"
+import { orderConfirmedTemplate } from "./templates/order-confirmed"
+import { passwordResetTemplate } from "./templates/password-reset"
+import { welcomeTemplate } from "./templates/welcome"
+
+type Options = {
+  from: string
+  host: string
+  port: number
+  secure: boolean
+  auth: {
+    user: string
+    pass: string
+  }
+}
+
+type InjectedDependencies = {
+  logger: Logger
+}
+
+class NodemailerNotificationService extends AbstractNotificationProviderService {
+  static identifier = "nodemailer"
+
+  private transporter: nodemailer.Transporter
+  private from: string
+  private logger: Logger
+
+  constructor({ logger }: InjectedDependencies, options: Options) {
+    super()
+    this.logger = logger
+    this.from = options.from
+
+    this.transporter = nodemailer.createTransport({
+      host: options.host,
+      port: options.port,
+      secure: options.secure,
+      auth: options.auth,
+    })
+  }
+
+  async send(notification: {
+    to: string
+    channel: string
+    template: string
+    data: Record<string, unknown>
+  }): Promise<{ id: string }> {
+    const { to, template, data } = notification
+
+    let subject = ""
+    let html = ""
+
+    switch (template) {
+      case "order-confirmed":
+        subject = `Your Whiff Theory order is confirmed`
+        html = orderConfirmedTemplate(data)
+        break
+      case "password-reset":
+        subject = `Reset your Whiff Theory password`
+        html = passwordResetTemplate(data)
+        break
+      case "welcome":
+        subject = `Welcome to Whiff Theory`
+        html = welcomeTemplate(data)
+        break
+      default:
+        this.logger.warn(`[nodemailer] Unknown template: ${template}`)
+        return { id: "unknown-template" }
+    }
+
+    try {
+      const info = await this.transporter.sendMail({
+        from: this.from,
+        to,
+        subject,
+        html,
+      })
+      this.logger.info(`[nodemailer] Email sent to ${to} (${info.messageId})`)
+      return { id: info.messageId }
+    } catch (err: unknown) {
+      if (err instanceof Error) {
+        this.logger.error(`[nodemailer] Failed to send email to ${to}`, err)
+        throw err
+      }
+      this.logger.error(`[nodemailer] Failed to send email to ${to}`, err as any)
+      throw err
+    }
+  }
+}
+
+export default NodemailerNotificationService

@@ -19,6 +19,7 @@ type PerfumeDetailsBody = {
   longevity?: string
   occasions?: string
   scent_weight?: number
+  caption?: string
 }
 
 export async function GET(

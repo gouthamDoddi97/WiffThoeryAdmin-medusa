@@ -19,6 +19,7 @@ const PerfumeDetails = model.define("perfume_details", {
   longevity: model.text().nullable(),      // "low" | "medium" | "high"
   occasions: model.text().nullable(),      // comma-separated e.g. "day,evening,office"
   scent_weight: model.number().nullable(), // 1–10, light → heavy
+  caption: model.text().nullable(),         // e.g. "Sweet fruity with amber base"
 })
 
 export default PerfumeDetails

@@ -20,6 +20,7 @@ type PerfumeDetails = {
   longevity: string
   occasions: string
   scent_weight: number
+  caption: string
 }
 
 const defaultDetails: PerfumeDetails = {
@@ -39,6 +40,7 @@ const defaultDetails: PerfumeDetails = {
   longevity: "",
   occasions: "",
   scent_weight: 5,
+  caption: "",
 }
 
 const PerfumeDetailsWidget = ({ data }: { data: AdminProduct }) => {
@@ -70,6 +72,7 @@ const PerfumeDetailsWidget = ({ data }: { data: AdminProduct }) => {
             longevity: perfume_details.longevity ?? "",
             occasions: perfume_details.occasions ?? "",
             scent_weight: perfume_details.scent_weight ?? 5,
+            caption: perfume_details.caption ?? "",
           })
         }
       })
@@ -138,6 +141,19 @@ const PerfumeDetailsWidget = ({ data }: { data: AdminProduct }) => {
           value={details.certifications}
           onChange={handleChange}
         />
+      </div>
+
+      {/* Caption */}
+      <div className="flex flex-col gap-y-1">
+        <Label htmlFor="caption" size="small">Caption</Label>
+        <Input
+          id="caption"
+          name="caption"
+          placeholder="e.g. Sweet fruity with amber base"
+          value={details.caption}
+          onChange={handleChange}
+        />
+        <p className="text-ui-fg-muted text-xs">Short one-line description shown on product cards</p>
       </div>
 
       {/* Notes */}
