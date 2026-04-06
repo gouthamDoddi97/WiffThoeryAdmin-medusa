@@ -21,7 +21,25 @@ type PerfumeDetails = {
   occasions: string
   scent_weight: number
   caption: string
+  fg_preset: string
+  bg2_preset: string
 }
+
+const FG_PRESET_OPTIONS = [
+  { value: "rise-up",  label: "Rise Up",  description: "Image 2 rises from below, always opaque" },
+  { value: "drift-in", label: "Drift In", description: "Image 2 drifts in from the right, always opaque" },
+  { value: "slide-in", label: "Slide In", description: "Image 2 slides in from the right with a fade" },
+  { value: "sweep-in", label: "Sweep In", description: "Image 2 sweeps in from the far right" },
+  { value: "bloom-up", label: "Bloom Up", description: "Image 2 floats up from below with a soft fade" },
+  { value: "swing-in", label: "Swing In", description: "Image 2 swings in with a slight rotation" },
+] as const
+
+const BG2_PRESET_OPTIONS = [
+  { value: "dissolve-over", label: "Dissolve Over", description: "Image 3 crossfades over the current view" },
+  { value: "veil-fall",     label: "Veil Fall",     description: "Image 3 descends from above like a curtain" },
+  { value: "zoom-through",  label: "Zoom Through",  description: "Image 3 punches in from an oversized scale" },
+  { value: "push-over",     label: "Push Over",     description: "Image 1 slides left as image 3 enters from the right" },
+] as const
 
 const defaultDetails: PerfumeDetails = {
   certifications: "",
@@ -41,6 +59,8 @@ const defaultDetails: PerfumeDetails = {
   occasions: "",
   scent_weight: 5,
   caption: "",
+  fg_preset: "rise-up",
+  bg2_preset: "dissolve-over",
 }
 
 const PerfumeDetailsWidget = ({ data }: { data: AdminProduct }) => {
@@ -73,6 +93,8 @@ const PerfumeDetailsWidget = ({ data }: { data: AdminProduct }) => {
             occasions: perfume_details.occasions ?? "",
             scent_weight: perfume_details.scent_weight ?? 5,
             caption: perfume_details.caption ?? "",
+            fg_preset:  perfume_details.fg_preset  ?? "rise-up",
+            bg2_preset: perfume_details.bg2_preset ?? "dissolve-over",
           })
         }
       })
@@ -154,6 +176,70 @@ const PerfumeDetailsWidget = ({ data }: { data: AdminProduct }) => {
           onChange={handleChange}
         />
         <p className="text-ui-fg-muted text-xs">Short one-line description shown on product cards</p>
+      </div>
+
+      {/* Image 2 Transition (fg preset) */}
+      <div className="flex flex-col gap-y-1">
+        <Label htmlFor="fg_preset" size="small">Image 2 Transition</Label>
+        <select
+          id="fg_preset"
+          name="fg_preset"
+          value={details.fg_preset}
+          onChange={(e) => handleSelectChange("fg_preset", e.target.value)}
+          className="h-9 w-full rounded-md border border-ui-border-base bg-ui-bg-base px-3 py-1 text-sm text-ui-fg-base focus:outline-none focus:ring-1 focus:ring-ui-border-interactive"
+        >
+          {FG_PRESET_OPTIONS.map((o) => (
+            <option key={o.value} value={o.value}>{o.label}</option>
+          ))}
+        </select>
+        <p className="text-ui-fg-muted text-xs">How the second image enters the scene.</p>
+        <div className="mt-1 grid gap-1.5 rounded-md border border-ui-border-base bg-ui-bg-subtle p-3">
+          {FG_PRESET_OPTIONS.map((o) => (
+            <div key={o.value} className="flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-ui-fg-base">{o.label}</p>
+                <p className="text-xs text-ui-fg-muted leading-relaxed">{o.description}</p>
+              </div>
+              {details.fg_preset === o.value && (
+                <span className="shrink-0 rounded-full border border-ui-border-interactive px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.14em] text-ui-fg-interactive">
+                  Active
+                </span>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Image 3 Transition (bg2 preset) */}
+      <div className="flex flex-col gap-y-1">
+        <Label htmlFor="bg2_preset" size="small">Image 3 Transition</Label>
+        <select
+          id="bg2_preset"
+          name="bg2_preset"
+          value={details.bg2_preset}
+          onChange={(e) => handleSelectChange("bg2_preset", e.target.value)}
+          className="h-9 w-full rounded-md border border-ui-border-base bg-ui-bg-base px-3 py-1 text-sm text-ui-fg-base focus:outline-none focus:ring-1 focus:ring-ui-border-interactive"
+        >
+          {BG2_PRESET_OPTIONS.map((o) => (
+            <option key={o.value} value={o.value}>{o.label}</option>
+          ))}
+        </select>
+        <p className="text-ui-fg-muted text-xs">How the third image replaces the current view.</p>
+        <div className="mt-1 grid gap-1.5 rounded-md border border-ui-border-base bg-ui-bg-subtle p-3">
+          {BG2_PRESET_OPTIONS.map((o) => (
+            <div key={o.value} className="flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-ui-fg-base">{o.label}</p>
+                <p className="text-xs text-ui-fg-muted leading-relaxed">{o.description}</p>
+              </div>
+              {details.bg2_preset === o.value && (
+                <span className="shrink-0 rounded-full border border-ui-border-interactive px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.14em] text-ui-fg-interactive">
+                  Active
+                </span>
+              )}
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* Notes */}

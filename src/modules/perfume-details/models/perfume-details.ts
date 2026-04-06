@@ -20,6 +20,9 @@ const PerfumeDetails = model.define("perfume_details", {
   occasions: model.text().nullable(),      // comma-separated e.g. "day,evening,office"
   scent_weight: model.number().nullable(), // 1–10, light → heavy
   caption: model.text().nullable(),         // e.g. "Sweet fruity with amber base"
+  animation_preset: model.text().nullable(), // storefront scene motion preset (legacy)
+  fg_preset: model.text().nullable(),        // how image 2 enters (FgPreset)
+  bg2_preset: model.text().nullable(),       // how image 3 enters (Bg2Preset)
 })
 
 export default PerfumeDetails

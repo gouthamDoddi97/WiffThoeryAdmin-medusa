@@ -20,6 +20,9 @@ type PerfumeDetailsBody = {
   occasions?: string
   scent_weight?: number
   caption?: string
+  animation_preset?: string
+  fg_preset?: string
+  bg2_preset?: string
 }
 
 export async function GET(
