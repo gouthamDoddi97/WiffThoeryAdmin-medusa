@@ -35,6 +35,10 @@ const FG_PRESET_OPTIONS = [
   { value: "sweep-in", label: "Sweep In", description: "Image 2 sweeps in from the far right" },
   { value: "bloom-up", label: "Bloom Up", description: "Image 2 floats up from below with a soft fade" },
   { value: "swing-in", label: "Swing In", description: "Image 2 swings in with a slight rotation" },
+  { value: "pan-out",     label: "Pan Out",     description: "Image 1 zooms from right corner to full as image 2 rises from below" },
+  { value: "zoom-portal",  label: "Zoom Portal",  description: "Image 1 zooms into a focal point — image 2 emerges from that point as a tiny speck expanding to full screen" },
+  { value: "split-reveal", label: "Split Reveal", description: "Image 1 stays full. Image 2 rises from below on the left, image 3 descends from above on the right — BG2 preset is ignored." },
+  { value: "fade-over",   label: "Fade Over",   description: "Image 2 fades in over image 1 — no movement, no blur on image 1" },
 ] as const
 
 const BG2_PRESET_OPTIONS = [
@@ -42,6 +46,7 @@ const BG2_PRESET_OPTIONS = [
   { value: "veil-fall",     label: "Veil Fall",     description: "Image 3 descends from above like a curtain" },
   { value: "zoom-through",  label: "Zoom Through",  description: "Image 3 punches in from an oversized scale" },
   { value: "push-over",     label: "Push Over",     description: "Image 1 slides left as image 3 enters from the right" },
+  { value: "full-takeover", label: "Full Takeover", description: "Image 3 dissolves over everything — image 2 fades out too, leaving image 3 alone" },
 ] as const
 
 const defaultDetails: PerfumeDetails = {
@@ -174,21 +179,9 @@ const PerfumeDetailsWidget = ({ data }: { data: AdminProduct }) => {
         />
       </div>
 
-      {/* Caption */}
-      <div className="flex flex-col gap-y-1">
-        <Label htmlFor="caption" size="small">Caption</Label>
-        <Input
-          id="caption"
-          name="caption"
-          placeholder="e.g. Sweet fruity with amber base"
-          value={details.caption}
-          onChange={handleChange}
-        />
-        <p className="text-ui-fg-muted text-xs">Short one-line description shown on product cards</p>
-      </div>
-
       {/* Image 2 Transition (fg preset) */}
       <div className="flex flex-col gap-y-1">
+
         <Label htmlFor="fg_preset" size="small">Image 2 Transition</Label>
         <select
           id="fg_preset"
@@ -318,51 +311,75 @@ const PerfumeDetailsWidget = ({ data }: { data: AdminProduct }) => {
         })}
       </div>
 
-      {/* Notes */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <div className="flex flex-col gap-y-1">
-          <Label htmlFor="top_notes" size="small">Top Notes</Label>
-          <Input
-            id="top_notes"
-            name="top_notes"
-            placeholder="e.g. Bergamot"
-            value={details.top_notes}
-            onChange={handleChange}
-          />
+      {/* ── Scene Text Overlays ── */}
+      <div className="flex flex-col gap-y-3">
+        <div>
+          <Label size="small" className="font-semibold">Scene Text Overlays</Label>
+          <p className="text-ui-fg-muted text-xs mt-0.5">Text shown on each scene during the parallax scroll.</p>
         </div>
-        <div className="flex flex-col gap-y-1">
-          <Label htmlFor="middle_notes" size="small">Middle Notes</Label>
-          <Input
-            id="middle_notes"
-            name="middle_notes"
-            placeholder="e.g. Angelica, Patchouli"
-            value={details.middle_notes}
-            onChange={handleChange}
-          />
-        </div>
-        <div className="flex flex-col gap-y-1">
-          <Label htmlFor="base_notes" size="small">Base Notes</Label>
-          <Input
-            id="base_notes"
-            name="base_notes"
-            placeholder="e.g. Coumarin, Amber, Musk"
-            value={details.base_notes}
-            onChange={handleChange}
-          />
-        </div>
-      </div>
 
-      {/* Scent Story */}
-      <div className="flex flex-col gap-y-1">
-        <Label htmlFor="scent_story" size="small">Scent Story</Label>
-        <Textarea
-          id="scent_story"
-          name="scent_story"
-          placeholder="Describe the scent journey…"
-          value={details.scent_story}
-          onChange={handleChange}
-          rows={5}
-        />
+        {/* Scene 1 */}
+        <div className="flex flex-col gap-y-2 rounded-md border border-ui-border-base p-3">
+          <p className="text-xs font-medium text-ui-fg-base">Scene 1 — Caption (shown below perfume name)</p>
+          <Textarea
+            id="caption"
+            name="caption"
+            placeholder="e.g. Sweet fruity with amber base"
+            value={details.caption}
+            onChange={handleChange}
+            rows={2}
+          />
+        </div>
+
+        {/* Scene 2 */}
+        <div className="flex flex-col gap-y-2 rounded-md border border-ui-border-base p-3">
+          <p className="text-xs font-medium text-ui-fg-base">Scene 2 — Highlighted Notes (top · heart · base)</p>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+            <div className="flex flex-col gap-y-1">
+              <Label htmlFor="top_notes" size="small">Top</Label>
+              <Input
+                id="top_notes"
+                name="top_notes"
+                placeholder="e.g. Bergamot"
+                value={details.top_notes}
+                onChange={handleChange}
+              />
+            </div>
+            <div className="flex flex-col gap-y-1">
+              <Label htmlFor="middle_notes" size="small">Heart</Label>
+              <Input
+                id="middle_notes"
+                name="middle_notes"
+                placeholder="e.g. Angelica, Patchouli"
+                value={details.middle_notes}
+                onChange={handleChange}
+              />
+            </div>
+            <div className="flex flex-col gap-y-1">
+              <Label htmlFor="base_notes" size="small">Base</Label>
+              <Input
+                id="base_notes"
+                name="base_notes"
+                placeholder="e.g. Coumarin, Amber, Musk"
+                value={details.base_notes}
+                onChange={handleChange}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Scene 3 */}
+        <div className="flex flex-col gap-y-2 rounded-md border border-ui-border-base p-3">
+          <p className="text-xs font-medium text-ui-fg-base">Scene 3 — Story</p>
+          <Textarea
+            id="scent_story"
+            name="scent_story"
+            placeholder="Describe the scent journey…"
+            value={details.scent_story}
+            onChange={handleChange}
+            rows={4}
+          />
+        </div>
       </div>
 
       {/* Usage Tips */}
