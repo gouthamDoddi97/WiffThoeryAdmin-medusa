@@ -23,6 +23,9 @@ const PerfumeDetails = model.define("perfume_details", {
   animation_preset: model.text().nullable(), // storefront scene motion preset (legacy)
   fg_preset: model.text().nullable(),        // how image 2 enters (FgPreset)
   bg2_preset: model.text().nullable(),       // how image 3 enters (Bg2Preset)
+  scene_image_1: model.text().nullable(),    // URL for parallax background image
+  scene_image_2: model.text().nullable(),    // URL for parallax foreground image
+  scene_image_3: model.text().nullable(),    // URL for parallax final background image
 })
 
 export default PerfumeDetails

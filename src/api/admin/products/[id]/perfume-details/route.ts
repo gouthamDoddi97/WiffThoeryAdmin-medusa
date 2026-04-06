@@ -23,6 +23,9 @@ type PerfumeDetailsBody = {
   animation_preset?: string
   fg_preset?: string
   bg2_preset?: string
+  scene_image_1?: string
+  scene_image_2?: string
+  scene_image_3?: string
 }
 
 export async function GET(

@@ -23,6 +23,9 @@ type PerfumeDetails = {
   caption: string
   fg_preset: string
   bg2_preset: string
+  scene_image_1: string
+  scene_image_2: string
+  scene_image_3: string
 }
 
 const FG_PRESET_OPTIONS = [
@@ -61,6 +64,9 @@ const defaultDetails: PerfumeDetails = {
   caption: "",
   fg_preset: "rise-up",
   bg2_preset: "dissolve-over",
+  scene_image_1: "",
+  scene_image_2: "",
+  scene_image_3: "",
 }
 
 const PerfumeDetailsWidget = ({ data }: { data: AdminProduct }) => {
@@ -95,6 +101,9 @@ const PerfumeDetailsWidget = ({ data }: { data: AdminProduct }) => {
             caption: perfume_details.caption ?? "",
             fg_preset:  perfume_details.fg_preset  ?? "rise-up",
             bg2_preset: perfume_details.bg2_preset ?? "dissolve-over",
+            scene_image_1: perfume_details.scene_image_1 ?? "",
+            scene_image_2: perfume_details.scene_image_2 ?? "",
+            scene_image_3: perfume_details.scene_image_3 ?? "",
           })
         }
       })
@@ -240,6 +249,73 @@ const PerfumeDetailsWidget = ({ data }: { data: AdminProduct }) => {
             </div>
           ))}
         </div>
+      </div>
+
+      {/* ── Scene Images (Parallax) ── */}
+      <div className="flex flex-col gap-y-3">
+        <div>
+          <Label size="small" className="font-semibold">Scene Images (Parallax)</Label>
+          <p className="text-ui-fg-muted text-xs mt-0.5">
+            Click any product image to assign it to a parallax slot. The storefront uses these
+            three images for the cinematic scroll section — the bucket renames uploaded files,
+            so select by thumbnail here instead of relying on filenames.
+          </p>
+        </div>
+        {(["scene_image_1", "scene_image_2", "scene_image_3"] as const).map((field, idx) => {
+          const slotLabels = ["Scene Image 1 — Background", "Scene Image 2 — Foreground", "Scene Image 3 — Final BG"]
+          const current = details[field]
+          const productImages = (data.images ?? []) as { id: string; url: string }[]
+          return (
+            <div key={field} className="flex flex-col gap-y-2 rounded-md border border-ui-border-base p-3">
+              <p className="text-xs font-medium text-ui-fg-base">{slotLabels[idx]}</p>
+              {/* Current assignment */}
+              <div className="flex items-center gap-3">
+                {current ? (
+                  <img
+                    src={current}
+                    alt={`scene ${idx + 1}`}
+                    className="h-16 w-16 rounded object-cover border border-ui-border-interactive"
+                  />
+                ) : (
+                  <div className="h-16 w-16 rounded border border-dashed border-ui-border-base bg-ui-bg-subtle flex items-center justify-center">
+                    <span className="text-[10px] text-ui-fg-muted text-center leading-tight px-1">Not set</span>
+                  </div>
+                )}
+                {current && (
+                  <button
+                    type="button"
+                    onClick={() => setDetails((prev) => ({ ...prev, [field]: "" }))}
+                    className="text-xs text-ui-fg-muted hover:text-ui-fg-base underline"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+              {/* Image grid */}
+              {productImages.length > 0 ? (
+                <div className="flex flex-wrap gap-2">
+                  {productImages.map((img) => (
+                    <button
+                      key={img.id ?? img.url}
+                      type="button"
+                      onClick={() => setDetails((prev) => ({ ...prev, [field]: img.url }))}
+                      className={`relative h-12 w-12 rounded overflow-hidden border-2 transition-all ${
+                        current === img.url
+                          ? "border-ui-border-interactive ring-1 ring-ui-border-interactive"
+                          : "border-transparent hover:border-ui-border-base"
+                      }`}
+                      title={img.url}
+                    >
+                      <img src={img.url} alt="" className="h-full w-full object-cover" />
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-ui-fg-muted">No product images found.</p>
+              )}
+            </div>
+          )
+        })}
       </div>
 
       {/* Notes */}
