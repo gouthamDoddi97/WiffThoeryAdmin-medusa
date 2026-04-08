@@ -137,12 +137,12 @@ const CategoryTierDetailsWidget = ({ data }: { data: AdminProductCategory }) => 
         <Input
           id="category_handle"
           name="category_handle"
-          placeholder="e.g. crowd-pleasers"
+          placeholder="e.g. popular"
           value={details.category_handle}
           onChange={handleChange}
         />
         <p className="text-ui-fg-subtle text-xs">
-          Must match the collection handle in the storefront (e.g. <code>crowd-pleasers</code>). This is how the storefront finds this tier's data.
+          Must match the collection handle in the storefront (e.g. <code>popular</code>). This is how the storefront finds this tier's data.
         </p>
       </div>
 
@@ -269,7 +269,7 @@ const CategoryTierDetailsWidget = ({ data }: { data: AdminProductCategory }) => 
             <Input
               id="next_tier_href"
               name="next_tier_href"
-              placeholder="e.g. /collections/intro-to-niche"
+              placeholder="e.g. /categories/unique"
               value={details.next_tier_href}
               onChange={handleChange}
             />
@@ -281,7 +281,7 @@ const CategoryTierDetailsWidget = ({ data }: { data: AdminProductCategory }) => 
             <Input
               id="next_tier_cta"
               name="next_tier_cta"
-              placeholder="e.g. EXPLORE INTRO TO NICHE"
+              placeholder="e.g. EXPLORE UNIQUE"
               value={details.next_tier_cta}
               onChange={handleChange}
             />
