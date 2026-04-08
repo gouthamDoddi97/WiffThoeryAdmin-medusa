@@ -333,39 +333,15 @@ const PerfumeDetailsWidget = ({ data }: { data: AdminProduct }) => {
 
         {/* Scene 2 */}
         <div className="flex flex-col gap-y-2 rounded-md border border-ui-border-base p-3">
-          <p className="text-xs font-medium text-ui-fg-base">Scene 2 — Highlighted Notes (top · heart · base)</p>
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-            <div className="flex flex-col gap-y-1">
-              <Label htmlFor="top_notes" size="small">Top</Label>
-              <Input
-                id="top_notes"
-                name="top_notes"
-                placeholder="e.g. Bergamot"
-                value={details.top_notes}
-                onChange={handleChange}
-              />
-            </div>
-            <div className="flex flex-col gap-y-1">
-              <Label htmlFor="middle_notes" size="small">Heart</Label>
-              <Input
-                id="middle_notes"
-                name="middle_notes"
-                placeholder="e.g. Angelica, Patchouli"
-                value={details.middle_notes}
-                onChange={handleChange}
-              />
-            </div>
-            <div className="flex flex-col gap-y-1">
-              <Label htmlFor="base_notes" size="small">Base</Label>
-              <Input
-                id="base_notes"
-                name="base_notes"
-                placeholder="e.g. Coumarin, Amber, Musk"
-                value={details.base_notes}
-                onChange={handleChange}
-              />
-            </div>
-          </div>
+          <p className="text-xs font-medium text-ui-fg-base">Scene 2 — Smells Like</p>
+          <Input
+            id="top_notes"
+            name="top_notes"
+            placeholder="e.g. Bergamot, Angelica, Patchouli, Amber, Musk"
+            value={details.top_notes}
+            onChange={handleChange}
+          />
+          <p className="text-xs text-ui-fg-muted">Comma-separated ingredients shown on scene 2</p>
         </div>
 
         {/* Scene 3 */}
