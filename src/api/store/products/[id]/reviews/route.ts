@@ -7,6 +7,7 @@ type ReviewBody = {
   rating: number
   title?: string
   body: string
+  image_urls?: string[]
 }
 
 export async function GET(
@@ -36,7 +37,7 @@ export async function POST(
   res: MedusaResponse
 ): Promise<void> {
   const { id } = req.params
-  const { author_name, author_email, rating, title, body } = req.body
+  const { author_name, author_email, rating, title, body, image_urls } = req.body
 
   if (!author_name?.trim() || !body?.trim()) {
     res.status(400).json({ error: "author_name and body are required" })
@@ -53,6 +54,14 @@ export async function POST(
   const emailRaw = author_email?.trim() ?? ""
   const emailClean = emailRaw.length > 0 ? emailRaw.slice(0, 255) : null
 
+  // Validate image_urls
+  const cleanImageUrls =
+    Array.isArray(image_urls)
+      ? image_urls
+          .filter((u) => typeof u === "string" && u.startsWith("http"))
+          .slice(0, 5)
+      : null
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const service = req.scope.resolve(PRODUCT_REVIEWS_MODULE) as any
 
@@ -63,6 +72,7 @@ export async function POST(
     rating: numRating,
     title: title?.trim().slice(0, 200) || null,
     body: body.trim().slice(0, 2000),
+    image_urls: cleanImageUrls,
     is_approved: false,
   })
 

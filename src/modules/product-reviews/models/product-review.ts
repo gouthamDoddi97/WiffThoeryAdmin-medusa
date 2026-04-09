@@ -8,6 +8,7 @@ const ProductReview = model.define("product_review", {
   rating: model.number(),
   title: model.text().nullable(),
   body: model.text(),
+  image_urls: model.json().nullable(),
   is_approved: model.boolean().default(false),
 })
 
