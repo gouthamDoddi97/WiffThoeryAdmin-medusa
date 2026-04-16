@@ -53,6 +53,9 @@ module.exports = defineConfig({
       resolve: "./src/modules/product-reviews",
     },
     {
+      resolve: "./src/modules/offers",
+    },
+    {
       resolve: "@medusajs/medusa/notification",
       options: {
         providers: [
