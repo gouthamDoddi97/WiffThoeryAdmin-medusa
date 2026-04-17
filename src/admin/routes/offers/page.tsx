@@ -34,7 +34,7 @@ type AdminProduct = {
   id: string
   title: string
   thumbnail: string | null
-  variants: { id: string; title: string }[]
+  variants: { id: string; title: string; images?: { id: string; url: string }[] }[]
 }
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -82,7 +82,7 @@ function ItemPicker({
         variant_id: variant.id,
         product_title: product.title,
         variant_title: variant.title,
-        thumbnail: product.thumbnail,
+        thumbnail: (variant as any).images?.[0]?.url ?? product.thumbnail,
       },
     ])
     setSelectedProduct("")
@@ -104,7 +104,7 @@ function ItemPicker({
                 <img
                   src={item.thumbnail}
                   alt={item.product_title}
-                  className="w-10 h-10 object-cover rounded"
+                  className="w-10 h-10 object-contain rounded"
                 />
               )}
               <div className="flex-1 min-w-0">
@@ -375,7 +375,7 @@ const OffersPage = () => {
   useEffect(() => {
     Promise.all([
       fetch("/admin/offers", { credentials: "include" }).then((r) => r.json()),
-      fetch("/admin/products?limit=100&fields=id,title,thumbnail,variants.id,variants.title", {
+      fetch("/admin/products?limit=100&fields=id,title,thumbnail,variants.id,variants.title,variants.images", {
         credentials: "include",
       }).then((r) => r.json()),
     ])
@@ -595,7 +595,7 @@ const OffersPage = () => {
                           <img
                             src={item.thumbnail}
                             alt={item.product_title}
-                            className="w-7 h-7 object-cover rounded"
+                            className="w-7 h-7 object-contain rounded"
                           />
                         )}
                         <span className="text-ui-fg-base">{item.product_title}</span>
