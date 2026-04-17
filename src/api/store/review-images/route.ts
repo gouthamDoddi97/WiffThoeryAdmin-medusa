@@ -11,7 +11,7 @@ export const config = {
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 5 * 1024 * 1024 }, // 5 MB max
-  fileFilter: (_req, file, cb) => {
+  fileFilter: (_req: Express.Request, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
     if (file.mimetype.startsWith("image/")) cb(null, true)
     else cb(new Error("Only image files are allowed"))
   },
@@ -52,7 +52,7 @@ export async function POST(
 
   const fileService = req.scope.resolve<IFileModuleService>(Modules.FILE)
 
-  const [uploaded] = await fileService.uploadFiles([
+  const [uploaded] = await fileService.createFiles([
     {
       filename: file.originalname,
       mimeType: file.mimetype,
