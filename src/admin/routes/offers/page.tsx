@@ -2,7 +2,7 @@
 
 import { defineRouteConfig } from "@medusajs/admin-sdk"
 import { Button, Heading, Input, Label, Switch, Textarea, toast } from "@medusajs/ui"
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 
 // ── types ────────────────────────────────────────────────────────────────────
 
@@ -23,6 +23,7 @@ type FragranceSet = {
   items: SetItem[]
   is_active: boolean
   badge: string | null
+  set_image: string | null
   tags: string | null
   usage_tips: string | null
   ingredients: string | null
@@ -165,6 +166,136 @@ function ItemPicker({
           Add
         </Button>
       </div>
+    </div>
+  )
+}
+
+// ── Set image uploader ────────────────────────────────────────────────────────
+
+function SetImageUploader({
+  set,
+  onUpdate,
+}: {
+  set: FragranceSet
+  onUpdate: (updated: FragranceSet) => void
+}) {
+  const [uploading, setUploading] = useState(false)
+  const [removing, setRemoving] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (!file.type.startsWith("image/")) {
+      toast.error("Only image files are supported")
+      return
+    }
+    setUploading(true)
+    try {
+      const formData = new FormData()
+      formData.append("files", file)
+      const uploadRes = await fetch("/admin/uploads", {
+        method: "POST",
+        credentials: "include",
+        body: formData,
+      })
+      if (!uploadRes.ok) throw new Error("Upload failed")
+      const { files } = await uploadRes.json()
+      const url: string = files?.[0]?.url ?? files?.[0]?.file_url ?? ""
+      if (!url) throw new Error("No URL returned")
+
+      const patchRes = await fetch(`/admin/offers/${set.id}`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ set_image: url }),
+      })
+      if (!patchRes.ok) throw new Error("Save failed")
+      const { set: updated } = await patchRes.json()
+      onUpdate(updated)
+      toast.success("Set image saved")
+    } catch {
+      toast.error("Failed to upload image")
+    } finally {
+      setUploading(false)
+      if (fileInputRef.current) fileInputRef.current.value = ""
+    }
+  }
+
+  const handleRemove = async () => {
+    setRemoving(true)
+    try {
+      const res = await fetch(`/admin/offers/${set.id}`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ set_image: null }),
+      })
+      if (!res.ok) throw new Error()
+      const { set: updated } = await res.json()
+      onUpdate(updated)
+      toast.success("Image removed")
+    } catch {
+      toast.error("Failed to remove image")
+    } finally {
+      setRemoving(false)
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-2 pt-3 border-t border-ui-border-base">
+      <Label>Set Image (used as slide background)</Label>
+
+      {set.set_image ? (
+        <div className="flex items-start gap-3">
+          <img
+            src={set.set_image}
+            alt="Set background"
+            className="w-24 h-16 object-cover rounded-md border border-ui-border-base"
+          />
+          <div className="flex flex-col gap-1.5">
+            <p className="text-xs text-ui-fg-subtle break-all max-w-xs">{set.set_image}</p>
+            <div className="flex gap-2">
+              <label className="cursor-pointer">
+                <span className="inline-flex items-center px-2.5 py-1 text-xs bg-ui-bg-subtle border border-ui-border-base rounded hover:bg-ui-bg-base transition-colors">
+                  {uploading ? "Uploading…" : "Replace"}
+                </span>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleUpload}
+                  disabled={uploading}
+                  className="sr-only"
+                />
+              </label>
+              <Button
+                variant="danger"
+                size="small"
+                isLoading={removing}
+                onClick={handleRemove}
+              >
+                Remove
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <label className="cursor-pointer flex flex-col items-center justify-center gap-2 border-2 border-dashed border-ui-border-base rounded-lg p-6 hover:bg-ui-bg-subtle transition-colors">
+          <span className="text-sm text-ui-fg-subtle">
+            {uploading ? "Uploading…" : "Click to upload a set image"}
+          </span>
+          <span className="text-xs text-ui-fg-muted">JPG, PNG, WEBP</span>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            onChange={handleUpload}
+            disabled={uploading}
+            className="sr-only"
+          />
+        </label>
+      )}
     </div>
   )
 }
@@ -605,6 +736,14 @@ const OffersPage = () => {
                     ))}
                   </div>
                 )}
+
+                {/* Set image uploader */}
+                <SetImageUploader
+                  set={set}
+                  onUpdate={(updated) =>
+                    setSets((prev) => prev.map((s) => (s.id === updated.id ? updated : s)))
+                  }
+                />
               </div>
             ))}
           </div>

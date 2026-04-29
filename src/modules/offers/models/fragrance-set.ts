@@ -21,6 +21,7 @@ const FragranceSet = model.define("fragrance_set", {
   items: model.json(),
   is_active: model.boolean().default(true),
   badge: model.text().nullable(),
+  set_image: model.text().nullable(),
   tags: model.text().nullable(),
   usage_tips: model.text().nullable(),
   ingredients: model.text().nullable(),

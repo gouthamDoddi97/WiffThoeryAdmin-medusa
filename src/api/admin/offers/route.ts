@@ -14,7 +14,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse): Promise<void
 /** POST /admin/offers — create a new set */
 export async function POST(req: MedusaRequest, res: MedusaResponse): Promise<void> {
   const service: Service = req.scope.resolve(OFFERS_MODULE)
-  const { title, description, price_amount, currency_code, items, is_active, badge } =
+  const { title, description, price_amount, currency_code, items, is_active, badge, set_image } =
     req.body as Record<string, unknown>
 
   if (!title || price_amount === undefined) {
@@ -30,6 +30,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse): Promise<voi
     items: (items as object[]) ?? [],
     is_active: is_active !== false,
     badge: badge ?? null,
+    set_image: (set_image as string) ?? null,
   })
   res.status(201).json({ set })
 }
