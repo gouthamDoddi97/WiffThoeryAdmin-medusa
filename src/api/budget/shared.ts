@@ -767,8 +767,11 @@ export async function getBudgetDashboard(req: MedusaRequest) {
     listOfflineSales(req),
   ])
 
-  const categoryMap = new Map(
-    categories.map((c: { id: string; name: string; slug: string }) => [c.id, c])
+  const categoryMap = new Map<string, { name: string }>(
+    categories.map((c: { id: string; name: string; slug: string }) => [
+      c.id,
+      { name: c.name },
+    ])
   )
   const currency = settings.default_currency ?? "inr"
 
