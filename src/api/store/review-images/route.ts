@@ -2,6 +2,7 @@ import { MedusaRequest, MedusaResponse } from "@medusajs/framework"
 import { Modules } from "@medusajs/framework/utils"
 import type { IFileModuleService } from "@medusajs/framework/types"
 import multer from "multer"
+import { prepareMulterFileForUpload } from "../../../utils/optimize-image"
 
 // Disable Medusa's default body parser so multer can read the stream
 export const config = {
@@ -52,14 +53,9 @@ export async function POST(
 
   const fileService = req.scope.resolve<IFileModuleService>(Modules.FILE)
 
-  const [uploaded] = await fileService.createFiles([
-    {
-      filename: file.originalname,
-      mimeType: file.mimetype,
-      content: file.buffer.toString("base64"),
-      access: "public",
-    },
-  ])
+  const uploadPayload = await prepareMulterFileForUpload(file)
+
+  const [uploaded] = await fileService.createFiles([uploadPayload])
 
   res.json({ url: uploaded.url })
 }

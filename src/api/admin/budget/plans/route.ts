@@ -1,0 +1,51 @@
+import { MedusaRequest, MedusaResponse } from "@medusajs/framework"
+import {
+  ensureBudgetSetup,
+  getBudgetService,
+  logPlanActivity,
+  PlanLineItemInput,
+  replacePlanLineItems,
+  toErrorResponse,
+} from "../../../budget/shared"
+
+export async function POST(req: MedusaRequest, res: MedusaResponse): Promise<void> {
+  try {
+    const service = getBudgetService(req)
+    await ensureBudgetSetup(req)
+    const body = req.body as {
+      title?: string
+      created_by?: string
+      deadline?: string
+      notes?: string
+      funding_source_id?: string
+      line_items?: PlanLineItemInput[]
+    }
+
+    if (!body.title?.trim() || !body.created_by?.trim()) {
+      res.status(400).json({ message: "title and created_by are required" })
+      return
+    }
+
+    const [plan] = await service.createPlans([
+      {
+        title: body.title.trim(),
+        status: "draft",
+        created_by: body.created_by.trim(),
+        deadline: body.deadline ? new Date(body.deadline) : null,
+        notes: body.notes ?? null,
+        funding_source_id: body.funding_source_id ?? null,
+      },
+    ])
+
+    const lineItems = await replacePlanLineItems(req, plan.id, body.line_items ?? [])
+    await logPlanActivity(req, plan.id, "created", body.created_by.trim(), {
+      title: plan.title,
+      line_item_count: lineItems.length,
+    })
+
+    res.status(201).json({ plan, line_items: lineItems })
+  } catch (error) {
+    const { status, message } = toErrorResponse(error)
+    res.status(status).json({ message })
+  }
+}

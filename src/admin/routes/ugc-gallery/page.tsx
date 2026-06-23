@@ -1,6 +1,7 @@
 "use client"
 
 import { defineRouteConfig } from "@medusajs/admin-sdk"
+import { Photo } from "@medusajs/icons"
 import { Button, Heading, Input, Label, toast } from "@medusajs/ui"
 import { useEffect, useRef, useState } from "react"
 
@@ -234,6 +235,7 @@ const UgcGalleryPage = () => {
 
 export const config = defineRouteConfig({
   label: "UGC Gallery",
+  icon: Photo,
 })
 
 export const handle = {

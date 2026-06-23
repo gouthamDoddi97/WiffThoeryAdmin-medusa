@@ -26,7 +26,8 @@
     "@medusajs/cli": "2.13.1",
     "@medusajs/framework": "2.13.1",
     "@medusajs/medusa": "2.13.1",
-    "nodemailer": "^8.0.4"
+    "nodemailer": "^8.0.4",
+    "sharp": "^0.35.2"
   },
   "devDependencies": {
     "@medusajs/test-utils": "2.13.1",

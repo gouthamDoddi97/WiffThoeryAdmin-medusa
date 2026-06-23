@@ -56,6 +56,9 @@ module.exports = defineConfig({
       resolve: "./src/modules/offers",
     },
     {
+      resolve: "./src/modules/budget-finance",
+    },
+    {
       resolve: "@medusajs/medusa/notification",
       options: {
         providers: [

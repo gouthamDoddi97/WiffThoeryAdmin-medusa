@@ -1,6 +1,7 @@
 "use client"
 
 import { defineRouteConfig } from "@medusajs/admin-sdk"
+import { StarSolid } from "@medusajs/icons"
 import { Button, Heading, toast } from "@medusajs/ui"
 import { useEffect, useState } from "react"
 
@@ -225,6 +226,7 @@ const ReviewsPage = () => {
 
 export const config = defineRouteConfig({
   label: "Reviews",
+  icon: StarSolid,
 })
 
 export default ReviewsPage
