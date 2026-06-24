@@ -690,6 +690,7 @@ export async function resolveFounderEmail(
 }
 
 function smtpConfigured() {
+  if (process.env.RESEND_API_KEY?.trim()) return true
   return Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS)
 }
 

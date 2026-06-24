@@ -1,4 +1,4 @@
-const BASE_URL = process.env.STOREFRONT_URL || "https://whifftheory.com"
+const BASE_URL = process.env.STOREFRONT_URL || "https://www.whiff-theory.com"
 
 function layout(content: string): string {
   return `<!DOCTYPE html>

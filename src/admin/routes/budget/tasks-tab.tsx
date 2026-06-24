@@ -78,6 +78,14 @@ function TaskCard({
     }
   }
 
+  const markDone = async () => {
+    const message = task.is_milestone
+      ? `Mark milestone "${task.title}" as done? Any linked plan will no longer be blocked by this milestone.`
+      : `Mark "${task.title}" as done?`
+    if (!window.confirm(message)) return
+    await update({ status: "done" })
+  }
+
   return (
     <div className={`border rounded-xl p-4 bg-ui-bg-base ${task.is_overdue ? "border-red-400" : "border-ui-border-base"}`}>
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -98,7 +106,7 @@ function TaskCard({
             </Button>
           )}
           {task.status !== "done" && task.status !== "cancelled" && (
-            <Button size="small" onClick={() => update({ status: "done" })}>
+            <Button size="small" onClick={markDone}>
               Done
             </Button>
           )}

@@ -272,6 +272,17 @@ function PlanDetail({
       toast.error("Upload an invoice before marking this plan complete")
       return
     }
+    const expenseNote =
+      insights.planned_total > 0
+        ? ` Expenses totalling ${fmt(insights.actual_total, currency)} will be recorded automatically.`
+        : ""
+    if (
+      !window.confirm(
+        `Mark "${plan.title}" as complete?${expenseNote} The plan will be locked as completed.`
+      )
+    ) {
+      return
+    }
     try {
       await api(`/admin/budget/plans/${plan.id}/complete`, {
         method: "POST",
