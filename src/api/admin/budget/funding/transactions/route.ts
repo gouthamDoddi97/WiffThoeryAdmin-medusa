@@ -20,11 +20,17 @@ export async function POST(req: MedusaRequest, res: MedusaResponse): Promise<voi
       return
     }
 
+    const amount = Number(body.amount)
+    if (!Number.isFinite(amount) || amount === 0) {
+      res.status(400).json({ message: "amount must be a non-zero number" })
+      return
+    }
+
     const [transaction] = await service.createFundingTransactions([
       {
         funding_source_id: String(body.funding_source_id),
         type: String(body.type),
-        amount: Number(body.amount),
+        amount,
         transaction_date: body.transaction_date
           ? new Date(body.transaction_date)
           : new Date(),

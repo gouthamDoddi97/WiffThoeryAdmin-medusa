@@ -12,6 +12,9 @@ export async function PATCH(req: MedusaRequest, res: MedusaResponse): Promise<vo
       founder_1_name?: string
       founder_2_name?: string
       founder_3_name?: string
+      founder_1_email?: string | null
+      founder_2_email?: string | null
+      founder_3_email?: string | null
       default_currency?: string
     }
 

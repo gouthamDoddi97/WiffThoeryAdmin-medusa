@@ -637,8 +637,9 @@ function FundingTab({
       toast.error("Select who you are (top right)")
       return
     }
-    if (!txForm.amount || Number(txForm.amount) <= 0) {
-      toast.error("Enter a valid amount")
+    const amount = Number(txForm.amount)
+    if (!txForm.amount || !Number.isFinite(amount) || amount === 0) {
+      toast.error("Enter a non-zero amount (use negative for withdrawal)")
       return
     }
     setSaving(true)
@@ -648,7 +649,7 @@ function FundingTab({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...txForm,
-          amount: Number(txForm.amount),
+          amount,
           recorded_by: currentUser,
         }),
       })
@@ -715,6 +716,12 @@ function FundingTab({
             <p className="font-semibold">{f.label}</p>
             <p className="text-xs text-ui-fg-subtle mt-2">Contributed</p>
             <p className="text-lg">{fmt(f.contributed, currency)}</p>
+            {f.withdrawn > 0 && (
+              <>
+                <p className="text-xs text-ui-fg-subtle mt-2">Withdrawn</p>
+                <p>{fmt(f.withdrawn, currency)}</p>
+              </>
+            )}
             <p className="text-xs text-ui-fg-subtle mt-2">Spent (tagged)</p>
             <p>{fmt(f.spent, currency)}</p>
             <p className="text-xs text-ui-fg-subtle mt-2">Pool balance</p>
@@ -724,7 +731,7 @@ function FundingTab({
       </div>
 
       <form noValidate onSubmit={addTransaction} className="border border-ui-border-base rounded-xl p-4 bg-ui-bg-base grid md:grid-cols-2 gap-4">
-        <div className="md:col-span-2"><Heading level="h2">Record contribution or repayment</Heading></div>
+        <div className="md:col-span-2"><Heading level="h2">Record contribution, withdrawal, or repayment</Heading></div>
         <div className="flex flex-col gap-1">
           <Label>Pool</Label>
           <select className="border border-ui-border-base rounded-md px-2 py-1.5 text-sm bg-ui-bg-base" value={txForm.funding_source_id} onChange={(e) => setTxForm({ ...txForm, funding_source_id: e.target.value })}>
@@ -743,7 +750,16 @@ function FundingTab({
         </div>
         <div className="flex flex-col gap-1">
           <Label>Amount</Label>
-          <Input type="number" min={0} value={txForm.amount} onChange={(e) => setTxForm({ ...txForm, amount: e.target.value })} />
+          <Input
+            type="number"
+            step="0.01"
+            placeholder="Negative = withdrawal from pool"
+            value={txForm.amount}
+            onChange={(e) => setTxForm({ ...txForm, amount: e.target.value })}
+          />
+          <p className="text-xs text-ui-fg-subtle">
+            Enter a negative amount on Contribution to record a founder withdrawal, or pick Withdrawal and enter a positive amount.
+          </p>
         </div>
         <div className="md:col-span-2 flex justify-end">
           <Button type="submit" isLoading={saving}>Record</Button>
@@ -1034,6 +1050,9 @@ function SettingsTab({
     founder_1_name: data.settings.founder_1_name,
     founder_2_name: data.settings.founder_2_name,
     founder_3_name: data.settings.founder_3_name,
+    founder_1_email: data.settings.founder_1_email ?? "",
+    founder_2_email: data.settings.founder_2_email ?? "",
+    founder_3_email: data.settings.founder_3_email ?? "",
   })
 
   const save = async (e: React.FormEvent) => {
@@ -1051,9 +1070,14 @@ function SettingsTab({
       await api("/admin/budget/settings", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
+        body: JSON.stringify({
+          ...form,
+          founder_1_email: form.founder_1_email.trim() || null,
+          founder_2_email: form.founder_2_email.trim() || null,
+          founder_3_email: form.founder_3_email.trim() || null,
+        }),
       })
-      toast.success("Founder names updated")
+      toast.success("Founder settings updated")
       await onRefresh()
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed")
@@ -1064,17 +1088,33 @@ function SettingsTab({
 
   return (
     <form noValidate onSubmit={save} className="border border-ui-border-base rounded-xl p-4 bg-ui-bg-base max-w-lg flex flex-col gap-4">
-      <Heading level="h2">Founder names</Heading>
+      <Heading level="h2">Founder names &amp; emails</Heading>
       <p className="text-sm text-ui-fg-subtle">
-        All three founders share this module. Set your real names — they appear on funding pools, expense logs, and the &quot;logging in as&quot; selector.
+        Names appear on funding pools, expense logs, and the &quot;logging in as&quot; selector.
+        Add each founder&apos;s email to receive task assignment and update notifications via Gmail SMTP.
       </p>
-      {(["founder_1_name", "founder_2_name", "founder_3_name"] as const).map((field, i) => (
-        <div key={field} className="flex flex-col gap-1">
-          <Label>Founder {i + 1}</Label>
-          <Input value={form[field]} onChange={(e) => setForm({ ...form, [field]: e.target.value })} />
+      {(["founder_1", "founder_2", "founder_3"] as const).map((key, i) => (
+        <div key={key} className="grid gap-3 border border-ui-border-base rounded-lg p-3 bg-ui-bg-subtle">
+          <p className="text-xs font-medium text-ui-fg-subtle">Founder {i + 1}</p>
+          <div className="flex flex-col gap-1">
+            <Label>Name</Label>
+            <Input
+              value={form[`${key}_name`]}
+              onChange={(e) => setForm({ ...form, [`${key}_name`]: e.target.value })}
+            />
+          </div>
+          <div className="flex flex-col gap-1">
+            <Label>Email (for task notifications)</Label>
+            <Input
+              type="email"
+              placeholder="founder@example.com"
+              value={form[`${key}_email`]}
+              onChange={(e) => setForm({ ...form, [`${key}_email`]: e.target.value })}
+            />
+          </div>
         </div>
       ))}
-      <Button type="submit" isLoading={saving}>Save names</Button>
+      <Button type="submit" isLoading={saving}>Save</Button>
     </form>
   )
 }

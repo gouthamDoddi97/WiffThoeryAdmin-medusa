@@ -1,5 +1,6 @@
 import { MedusaRequest } from "@medusajs/framework/http"
-import { MedusaError } from "@medusajs/framework/utils"
+import type { INotificationModuleService } from "@medusajs/framework/types"
+import { MedusaError, Modules } from "@medusajs/framework/utils"
 import { BUDGET_FINANCE_MODULE } from "../../modules/budget-finance"
 import { listOfflineSales } from "../offline-sales/shared"
 
@@ -47,6 +48,7 @@ export const FUNDING_TYPES = [
 
 export const TRANSACTION_TYPES = [
   { value: "contribution", label: "Contribution / deposit" },
+  { value: "withdrawal", label: "Withdrawal" },
   { value: "disbursement", label: "Loan disbursement" },
   { value: "emi_payment", label: "EMI / repayment" },
   { value: "interest", label: "Interest paid" },
@@ -66,6 +68,187 @@ export const PLAN_STATUSES = [
   { value: "cancelled", label: "Cancelled" },
 ]
 
+export const PLAN_REVISION_TYPES = [
+  { value: "omitted", label: "Item removed" },
+  { value: "qty_reduced", label: "Quantity reduced" },
+  { value: "downgraded", label: "Cheaper option" },
+  { value: "revised", label: "Revised" },
+  { value: "deferred", label: "Deferred (not on plan)" },
+] as const
+
+export function revisionTypeLabel(type: string) {
+  return PLAN_REVISION_TYPES.find((t) => t.value === type)?.label ?? type
+}
+
+export function formatRevisionChange(revision: {
+  revision_type: string
+  item_label: string
+  revised_item_label?: string | null
+  original_quantity?: number | null
+  revised_quantity?: number | null
+  original_unit_price?: number | null
+  revised_unit_price?: number | null
+  original_total?: number
+  revised_total?: number
+  savings?: number
+}): string {
+  if (revision.revision_type === "deferred") {
+    return revision.item_label
+  }
+  if (revision.revision_type === "omitted") {
+    const qty =
+      revision.original_quantity != null ? ` (${revision.original_quantity} removed)` : ""
+    return `${revision.item_label}${qty}`
+  }
+  const parts: string[] = [revision.item_label]
+  if (
+    revision.original_quantity != null &&
+    revision.revised_quantity != null &&
+    revision.original_quantity !== revision.revised_quantity
+  ) {
+    parts.push(`${revision.original_quantity} → ${revision.revised_quantity}`)
+  }
+  if (
+    revision.original_unit_price != null &&
+    revision.revised_unit_price != null &&
+    revision.original_unit_price !== revision.revised_unit_price
+  ) {
+    parts.push(`₹${revision.original_unit_price} → ₹${revision.revised_unit_price}`)
+  }
+  if (revision.revised_item_label && revision.revised_item_label !== revision.item_label) {
+    parts.push(`now: ${revision.revised_item_label}`)
+  }
+  return parts.join(" · ")
+}
+
+type PlanLineSnapshot = {
+  id: string
+  label: string
+  category_id: string
+  quantity: number
+  unit_price: number
+  shipping?: number
+}
+
+export function detectPlanLineRevisions(
+  planId: string,
+  actor: string,
+  reason: string | null,
+  oldItems: PlanLineSnapshot[],
+  newItems: PlanLineItemInput[]
+) {
+  const oldById = new Map(oldItems.map((item) => [item.id, item]))
+  const newById = new Map(
+    newItems.filter((item) => item.id).map((item) => [item.id as string, item])
+  )
+  const revisions: Array<Record<string, unknown>> = []
+
+  for (const old of oldItems) {
+    if (newById.has(old.id)) continue
+    const originalTotal = lineItemAmount(old)
+    revisions.push({
+      plan_id: planId,
+      revision_type: "omitted",
+      item_label: old.label,
+      category_id: old.category_id,
+      original_quantity: Number(old.quantity),
+      revised_quantity: 0,
+      original_unit_price: Number(old.unit_price),
+      revised_unit_price: 0,
+      original_total: originalTotal,
+      revised_total: 0,
+      savings: originalTotal,
+      reason,
+      actor,
+    })
+  }
+
+  for (const newItem of newItems) {
+    if (!newItem.id) continue
+    const old = oldById.get(newItem.id)
+    if (!old) continue
+
+    const oldTotal = lineItemAmount(old)
+    const newTotal = lineItemAmount({
+      quantity: Number(newItem.quantity),
+      unit_price: Number(newItem.unit_price),
+      shipping: Number(newItem.shipping ?? 0),
+    })
+    if (newTotal >= oldTotal - 0.001) continue
+
+    const savings = Math.round((oldTotal - newTotal) * 100) / 100
+    const qtyDown = Number(newItem.quantity) < Number(old.quantity)
+    const priceDown = Number(newItem.unit_price) < Number(old.unit_price)
+    const labelChanged = newItem.label.trim() !== old.label
+
+    let revisionType = "revised"
+    if (qtyDown && !priceDown && !labelChanged) revisionType = "qty_reduced"
+    else if (priceDown && !qtyDown && !labelChanged) revisionType = "downgraded"
+    else if (labelChanged && (priceDown || qtyDown)) revisionType = "downgraded"
+
+    revisions.push({
+      plan_id: planId,
+      revision_type: revisionType,
+      item_label: old.label,
+      revised_item_label: labelChanged ? newItem.label.trim() : null,
+      category_id: old.category_id,
+      original_quantity: Number(old.quantity),
+      revised_quantity: Number(newItem.quantity),
+      original_unit_price: Number(old.unit_price),
+      revised_unit_price: Number(newItem.unit_price),
+      original_total: oldTotal,
+      revised_total: newTotal,
+      savings,
+      reason,
+      actor,
+    })
+  }
+
+  return revisions
+}
+
+export async function recordPlanRevisionsOnUpdate(
+  req: MedusaRequest,
+  planId: string,
+  options: {
+    actor: string
+    reason?: string | null
+    oldLineItems: PlanLineSnapshot[]
+    newLineItems?: PlanLineItemInput[]
+  }
+) {
+  if (!options.newLineItems?.length && !options.oldLineItems.length) {
+    return []
+  }
+  if (!options.newLineItems) {
+    return []
+  }
+
+  const reason = options.reason?.trim() || null
+  const payloads = detectPlanLineRevisions(
+    planId,
+    options.actor,
+    reason,
+    options.oldLineItems,
+    options.newLineItems
+  )
+
+  if (!payloads.length) {
+    return []
+  }
+
+  const service = getBudgetService(req)
+  const created = await service.createPlanRevisions(payloads)
+  await logPlanActivity(req, planId, "revisions_recorded", options.actor, {
+    count: created.length,
+    savings: created.reduce(
+      (sum: number, row: { savings?: number }) => sum + Number(row.savings ?? 0),
+      0
+    ),
+  })
+  return created
+}
+
 export const TASK_STATUSES = [
   { value: "todo", label: "To do" },
   { value: "in_progress", label: "In progress" },
@@ -80,6 +263,7 @@ export const TASK_PRIORITIES = [
 ]
 
 export type PlanLineItemInput = {
+  id?: string
   label: string
   category_id: string
   quantity: number
@@ -267,6 +451,68 @@ export async function createExpensesFromCompletedPlan(
   return service.createExpenses(payloads)
 }
 
+export async function resyncExpensesForCompletedPlan(
+  req: MedusaRequest,
+  planId: string,
+  actor: string
+) {
+  const service = getBudgetService(req)
+  const [plan] = await service.listPlans({ id: planId }, { take: 1 })
+  if (!plan || plan.status !== "completed") {
+    return []
+  }
+
+  const planExpenses = await service.listExpenses({ plan_id: planId }, { take: 200 })
+  const autoExpenses = planExpenses.filter((e: { notes?: string | null }) =>
+    e.notes?.includes("Auto-recorded when plan was marked complete")
+  )
+
+  if (autoExpenses.length) {
+    await service.deleteExpenses(autoExpenses.map((e: { id: string }) => e.id))
+  }
+
+  return createExpensesFromCompletedPlan(req, planId, {
+    actor,
+    invoiceUrl: plan.invoice_url,
+  })
+}
+
+export async function syncCompletedPlanExpensesIfStale(
+  req: MedusaRequest,
+  planId: string,
+  actor: string
+) {
+  const service = getBudgetService(req)
+  const items = await service.listPlanLineItems({ plan_id: planId }, { take: 200 })
+  const planned = items.reduce(
+    (sum: number, item: { quantity: number; unit_price: number; shipping?: number }) =>
+      sum + lineItemAmount(item),
+    0
+  )
+  const expenses = await service.listExpenses({ plan_id: planId }, { take: 200 })
+  if (!expenses.length) {
+    return false
+  }
+
+  const autoExpenses = expenses.filter((e: { notes?: string | null }) =>
+    e.notes?.includes("Auto-recorded when plan was marked complete")
+  )
+  if (autoExpenses.length !== expenses.length) {
+    return false
+  }
+
+  const recorded = autoExpenses.reduce(
+    (sum: number, e: { amount: number }) => sum + Number(e.amount),
+    0
+  )
+  if (Math.abs(recorded - planned) < 0.01) {
+    return false
+  }
+
+  await resyncExpensesForCompletedPlan(req, planId, actor)
+  return true
+}
+
 export function computePlanInsights(
   plan: { id: string; status: string; deadline?: string | null; title: string },
   lineItems: Array<{
@@ -283,27 +529,39 @@ export function computePlanInsights(
   expenses: Array<{ plan_id?: string | null; plan_line_item_id?: string | null; amount: number; category_id: string }>,
   categoryMap: Map<string, { name: string }>,
   tasks: Array<{ plan_id?: string | null; status: string; is_milestone?: boolean }>,
-  catalog: CatalogMaps
+  catalog: CatalogMaps,
+  revisions: Array<{ revision_type: string; savings?: number }> = []
 ) {
   const planExpenses = expenses.filter((e) => e.plan_id === plan.id)
-  const lineItemById = new Map(lineItems.map((item) => [item.id, item]))
-  const plannedTotal = lineItems.reduce((sum, item) => sum + lineItemAmount(item), 0)
-  const actualTotal = planExpenses.reduce((sum, e) => sum + Number(e.amount), 0)
-  const remaining = Math.max(plannedTotal - actualTotal, 0)
-  const variance = plannedTotal - actualTotal
+  const orderTotal = lineItems.reduce((sum, item) => sum + lineItemAmount(item), 0)
+  const recordedTotal = planExpenses.reduce((sum, e) => sum + Number(e.amount), 0)
+
+  const autoRevisions = revisions.filter((row) => row.revision_type !== "deferred")
+  const revisionSavingsTotal = autoRevisions.reduce(
+    (sum, row) => sum + Number(row.savings ?? 0),
+    0
+  )
+  const originalPlannedTotal =
+    revisionSavingsTotal > 0
+      ? Math.round((orderTotal + revisionSavingsTotal) * 100) / 100
+      : orderTotal
+
+  const plannedTotal = originalPlannedTotal
+  const actualTotal = orderTotal
+  const remaining = Math.max(revisionSavingsTotal, 0)
+  const variance = revisionSavingsTotal
   const variancePercent =
-    plannedTotal > 0 ? Math.round((variance / plannedTotal) * 100) : null
+    originalPlannedTotal > 0
+      ? Math.round((revisionSavingsTotal / originalPlannedTotal) * 100)
+      : null
 
   const lineInsights = lineItems.map((item) => {
-    const actual = planExpenses
-      .filter((e) => e.plan_line_item_id === item.id)
-      .reduce((sum, e) => sum + Number(e.amount), 0)
     const planned = lineItemAmount(item)
     return {
       ...item,
       planned,
-      actual,
-      remaining: planned - actual,
+      actual: planned,
+      remaining: 0,
       category_name: categoryMap.get(item.category_id)?.name ?? item.category_id,
       fragrance_key: resolveFragranceKey(item),
       fragrance_label: resolveFragranceLabel(item, catalog),
@@ -313,13 +571,10 @@ export function computePlanInsights(
   const categoryBreakdown = new Map<string, { planned: number; actual: number }>()
   for (const item of lineItems) {
     const entry = categoryBreakdown.get(item.category_id) ?? { planned: 0, actual: 0 }
-    entry.planned += lineItemAmount(item)
+    const amount = lineItemAmount(item)
+    entry.planned += amount
+    entry.actual += amount
     categoryBreakdown.set(item.category_id, entry)
-  }
-  for (const expense of planExpenses) {
-    const entry = categoryBreakdown.get(expense.category_id) ?? { planned: 0, actual: 0 }
-    entry.actual += Number(expense.amount)
-    categoryBreakdown.set(expense.category_id, entry)
   }
 
   const byCategory = [...categoryBreakdown.entries()].map(([category_id, vals]) => ({
@@ -343,27 +598,10 @@ export function computePlanInsights(
       actual: 0,
       line_count: 0,
     }
-    entry.planned += lineItemAmount(item)
+    const amount = lineItemAmount(item)
+    entry.planned += amount
+    entry.actual += amount
     entry.line_count += 1
-    fragranceBreakdown.set(key, entry)
-  }
-
-  for (const expense of planExpenses) {
-    const linkedItem = expense.plan_line_item_id
-      ? lineItemById.get(expense.plan_line_item_id)
-      : null
-    const key = linkedItem
-      ? resolveFragranceKey(linkedItem)
-      : "shared"
-    const entry = fragranceBreakdown.get(key) ?? {
-      label: linkedItem
-        ? resolveFragranceLabel(linkedItem, catalog)
-        : "Shared / unassigned",
-      planned: 0,
-      actual: 0,
-      line_count: 0,
-    }
-    entry.actual += Number(expense.amount)
     fragranceBreakdown.set(key, entry)
   }
 
@@ -388,11 +626,14 @@ export function computePlanInsights(
 
   return {
     planned_total: plannedTotal,
+    order_total: orderTotal,
     actual_total: actualTotal,
-    remaining_commitment: plan.status === "active" ? remaining : 0,
+    recorded_expense_total: recordedTotal,
+    revision_savings_total: Math.round(revisionSavingsTotal * 100) / 100,
+    remaining_commitment: plan.status === "active" ? Math.max(orderTotal - recordedTotal, 0) : 0,
     variance,
     variance_percent: variancePercent,
-    is_over_budget: actualTotal > plannedTotal,
+    is_over_budget: recordedTotal > orderTotal + 0.01,
     line_items: lineInsights,
     by_category: byCategory,
     by_fragrance: byFragrance,
@@ -430,6 +671,143 @@ export async function logTaskActivity(
   ])
 }
 
+export async function resolveFounderEmail(
+  req: MedusaRequest,
+  founderName: string
+): Promise<string | null> {
+  const service = getBudgetService(req)
+  const [settings] = await service.listBudgetSettings({}, { take: 1 })
+  if (!settings) return null
+
+  const pairs = [
+    { name: settings.founder_1_name, email: settings.founder_1_email },
+    { name: settings.founder_2_name, email: settings.founder_2_email },
+    { name: settings.founder_3_name, email: settings.founder_3_email },
+  ]
+  const match = pairs.find((row) => row.name.trim() === founderName.trim())
+  const email = match?.email?.trim()
+  return email && email.includes("@") ? email : null
+}
+
+function smtpConfigured() {
+  return Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS)
+}
+
+export async function notifyFounderTask(
+  req: MedusaRequest,
+  options: {
+    task: {
+      id: string
+      title: string
+      description?: string | null
+      assigned_to: string
+      status: string
+      priority: string
+      due_date?: string | Date | null
+      plan_id?: string | null
+      is_milestone?: boolean
+    }
+    event: "created" | "updated"
+    actor: string
+    changes?: string[]
+    force?: boolean
+  }
+): Promise<void> {
+  if (!smtpConfigured()) return
+
+  const { task, event, actor, changes = [], force = false } = options
+  if (!force && actor.trim() === task.assigned_to.trim()) return
+
+  const email = await resolveFounderEmail(req, task.assigned_to)
+  if (!email) return
+
+  let planTitle: string | null = null
+  if (task.plan_id) {
+    const service = getBudgetService(req)
+    const [plan] = await service.listPlans({ id: task.plan_id }, { take: 1 })
+    planTitle = plan?.title ?? null
+  }
+
+  try {
+    const notificationService = req.scope.resolve<INotificationModuleService>(
+      Modules.NOTIFICATION
+    )
+    await notificationService.createNotifications({
+      to: email,
+      channel: "email",
+      template: event === "created" ? "task-assigned" : "task-updated",
+      data: {
+        task,
+        actor,
+        changes,
+        plan_title: planTitle,
+      },
+    })
+  } catch (error) {
+    console.error("[task-notification] Failed to send email", error)
+  }
+}
+
+export function buildTaskChangeSummary(
+  existing: {
+    title: string
+    assigned_to: string
+    status: string
+    priority: string
+    due_date?: string | Date | null
+    description?: string | null
+    plan_id?: string | null
+    is_milestone?: boolean
+  },
+  body: {
+    title?: string
+    assigned_to?: string
+    status?: string
+    priority?: string
+    due_date?: string | null
+    description?: string | null
+    plan_id?: string | null
+    is_milestone?: boolean
+    comment?: string
+  }
+): string[] {
+  const lines: string[] = []
+
+  if (body.title?.trim() && body.title.trim() !== existing.title) {
+    lines.push(`Title → ${body.title.trim()}`)
+  }
+  if (body.assigned_to?.trim() && body.assigned_to.trim() !== existing.assigned_to) {
+    lines.push(`Reassigned from ${existing.assigned_to} to ${body.assigned_to.trim()}`)
+  }
+  if (body.status && body.status !== existing.status) {
+    lines.push(`Status: ${existing.status} → ${body.status}`)
+  }
+  if (body.priority && body.priority !== existing.priority) {
+    lines.push(`Priority: ${existing.priority} → ${body.priority}`)
+  }
+  if (body.due_date !== undefined) {
+    const oldDue = existing.due_date ? new Date(existing.due_date).toISOString().slice(0, 10) : null
+    const newDue = body.due_date ? new Date(body.due_date).toISOString().slice(0, 10) : null
+    if (oldDue !== newDue) {
+      lines.push(`Due date: ${oldDue ?? "none"} → ${newDue ?? "none"}`)
+    }
+  }
+  if (body.description !== undefined && body.description !== existing.description) {
+    lines.push("Description updated")
+  }
+  if (body.plan_id !== undefined && body.plan_id !== existing.plan_id) {
+    lines.push(body.plan_id ? "Linked to a plan" : "Unlinked from plan")
+  }
+  if (body.is_milestone !== undefined && body.is_milestone !== existing.is_milestone) {
+    lines.push(body.is_milestone ? "Marked as milestone" : "Unmarked as milestone")
+  }
+  if (body.comment?.trim()) {
+    lines.push(`Comment: ${body.comment.trim()}`)
+  }
+
+  return lines
+}
+
 export async function replacePlanLineItems(
   req: MedusaRequest,
   planId: string,
@@ -437,25 +815,57 @@ export async function replacePlanLineItems(
 ) {
   const service = getBudgetService(req)
   const existing = await service.listPlanLineItems({ plan_id: planId }, { take: 200 })
-  if (existing.length) {
-    await service.deletePlanLineItems(existing.map((i: { id: string }) => i.id))
+  const mapItem = (item: PlanLineItemInput, index: number) => ({
+    label: item.label,
+    category_id: item.category_id,
+    quantity: Number(item.quantity),
+    unit_price: Number(item.unit_price),
+    shipping: Number(item.shipping ?? 0),
+    sort_order: item.sort_order ?? index,
+    notes: item.notes ?? null,
+    product_id: item.product_id ?? null,
+    variant_id: item.variant_id ?? null,
+    planned_fragrance_name: item.planned_fragrance_name?.trim() || null,
+  })
+
+  const hasStableIds = items.some((item) => item.id)
+  if (!hasStableIds) {
+    if (existing.length) {
+      await service.deletePlanLineItems(existing.map((i: { id: string }) => i.id))
+    }
+    if (!items.length) return []
+    return service.createPlanLineItems(
+      items.map((item, index) => ({
+        plan_id: planId,
+        ...mapItem(item, index),
+      }))
+    )
   }
-  if (!items.length) return []
-  return service.createPlanLineItems(
-    items.map((item, index) => ({
-      plan_id: planId,
-      label: item.label,
-      category_id: item.category_id,
-      quantity: Number(item.quantity),
-      unit_price: Number(item.unit_price),
-      shipping: Number(item.shipping ?? 0),
-      sort_order: item.sort_order ?? index,
-      notes: item.notes ?? null,
-      product_id: item.product_id ?? null,
-      variant_id: item.variant_id ?? null,
-      planned_fragrance_name: item.planned_fragrance_name?.trim() || null,
-    }))
+
+  const existingIds = new Set(existing.map((i: { id: string }) => i.id))
+  const incomingIds = new Set(
+    items.filter((item) => item.id).map((item) => item.id as string)
   )
+  const toDelete = existing.filter((i: { id: string }) => !incomingIds.has(i.id))
+  if (toDelete.length) {
+    await service.deletePlanLineItems(toDelete.map((i: { id: string }) => i.id))
+  }
+
+  const synced: Awaited<ReturnType<typeof service.createPlanLineItems>> = []
+  for (const [index, item] of items.entries()) {
+    const payload = mapItem(item, index)
+    if (item.id && existingIds.has(item.id)) {
+      const updated = await service.updatePlanLineItems({ id: item.id, ...payload })
+      synced.push(Array.isArray(updated) ? updated[0] : updated)
+    } else {
+      const created = await service.createPlanLineItems([
+        { plan_id: planId, ...payload },
+      ])
+      synced.push(created[0])
+    }
+  }
+
+  return synced
 }
 
 export function toErrorResponse(error: unknown): { status: number; message: string } {
@@ -558,6 +968,44 @@ function sumTransactions(
   return transactions
     .filter((tx) => types.includes(tx.type))
     .reduce((sum, tx) => sum + Number(tx.amount), 0)
+}
+
+/** Positive inflow types credit the pool; negative amounts count as withdrawal. */
+function splitFundingTxAmount(
+  type: string,
+  amount: number
+): { contributed: number; withdrawn: number } {
+  const n = Number(amount)
+  const inflowTypes = ["contribution", "disbursement"]
+  const outflowTypes = ["withdrawal", "emi_payment", "interest", "other"]
+
+  if (inflowTypes.includes(type)) {
+    return n >= 0
+      ? { contributed: n, withdrawn: 0 }
+      : { contributed: 0, withdrawn: Math.abs(n) }
+  }
+  if (outflowTypes.includes(type)) {
+    return n >= 0
+      ? { contributed: 0, withdrawn: n }
+      : { contributed: Math.abs(n), withdrawn: 0 }
+  }
+  return n >= 0
+    ? { contributed: n, withdrawn: 0 }
+    : { contributed: 0, withdrawn: Math.abs(n) }
+}
+
+function sumFundingPool(
+  transactions: Array<{ type: string; amount: number }>
+): { contributed: number; withdrawn: number } {
+  return transactions.reduce(
+    (acc, tx) => {
+      const split = splitFundingTxAmount(tx.type, tx.amount)
+      acc.contributed += split.contributed
+      acc.withdrawn += split.withdrawn
+      return acc
+    },
+    { contributed: 0, withdrawn: 0 }
+  )
 }
 
 function generateUpcomingEmis(source: {
@@ -747,6 +1195,7 @@ export async function getBudgetDashboard(req: MedusaRequest) {
     plans,
     planLineItems,
     planActivities,
+    planRevisions,
     founderTasks,
     taskActivities,
     offlineSales,
@@ -762,10 +1211,28 @@ export async function getBudgetDashboard(req: MedusaRequest) {
     service.listPlans({}, { order: { created_at: "DESC" }, take: 200 }),
     service.listPlanLineItems({}, { take: 1000 }),
     service.listPlanActivities({}, { order: { created_at: "DESC" }, take: 500 }),
+    service.listPlanRevisions({}, { order: { created_at: "DESC" }, take: 500 }),
     service.listFounderTasks({}, { order: { created_at: "DESC" }, take: 200 }),
     service.listTaskActivities({}, { order: { created_at: "DESC" }, take: 1000 }),
     listOfflineSales(req),
   ])
+
+  for (const plan of plans.filter((p: { status: string }) => p.status === "completed")) {
+    await syncCompletedPlanExpensesIfStale(
+      req,
+      plan.id,
+      (plan as { created_by: string }).created_by
+    )
+  }
+
+  if (plans.some((p: { status: string }) => p.status === "completed")) {
+    const refreshedExpenses = await service.listExpenses(
+      {},
+      { order: { expense_date: "DESC" }, take: 500 }
+    )
+    expenses.length = 0
+    expenses.push(...refreshedExpenses)
+  }
 
   const categoryMap = new Map<string, { name: string }>(
     categories.map((c: { id: string; name: string; slug: string }) => [
@@ -911,9 +1378,9 @@ export async function getBudgetDashboard(req: MedusaRequest) {
     .filter((s: { type: string }) => s.type === "founder")
     .map((source: { id: string; label: string; founder_key?: string }) => {
       const txs = txsBySource.get(source.id) ?? []
-      const contributed = sumTransactions(txs, ["contribution", "disbursement"])
-      const withdrawn = sumTransactions(txs, ["emi_payment", "interest", "other"])
+      const { contributed, withdrawn: txWithdrawn } = sumFundingPool(txs)
       const spent = expensesBySource.get(source.id) ?? 0
+      const withdrawn = txWithdrawn
       const balance = contributed - withdrawn - spent
       return {
         id: source.id,
@@ -1063,11 +1530,15 @@ export async function getBudgetDashboard(req: MedusaRequest) {
       deadline?: string | null
       created_by: string
       notes?: string | null
+      deferred_notes?: string | null
       funding_source_id?: string | null
       created_at: string
     }) => {
       const items = (lineItemsByPlan.get(plan.id) ?? []).sort(
         (a: { sort_order: number }, b: { sort_order: number }) => a.sort_order - b.sort_order
+      )
+      const revisions = planRevisions.filter(
+        (r: { plan_id: string }) => r.plan_id === plan.id
       )
       const insights = computePlanInsights(
         plan,
@@ -1075,10 +1546,61 @@ export async function getBudgetDashboard(req: MedusaRequest) {
         expenses,
         categoryMap,
         founderTasks,
-        catalog
+        catalog,
+        revisions
       )
-      return { ...plan, line_items: items, insights }
+      return { ...plan, line_items: items, insights, revisions: revisions.filter(
+        (r: { revision_type: string }) => r.revision_type !== "deferred"
+      ) }
     }
+  )
+
+  const planById = new Map(
+    planSummaries.map((plan: { id: string }) => [plan.id, plan])
+  )
+  const revisionsByPlan = new Map<string, typeof planRevisions>()
+  for (const revision of planRevisions) {
+    const list = revisionsByPlan.get(revision.plan_id) ?? []
+    list.push(revision)
+    revisionsByPlan.set(revision.plan_id, list)
+  }
+
+  const plan_revision_summaries = [...revisionsByPlan.entries()]
+    .map(([planId, revisions]) => {
+      const plan = planById.get(planId) as
+        | { title?: string; status?: string; deferred_notes?: string | null }
+        | undefined
+      const autoRevisions = revisions.filter(
+        (r: { revision_type: string }) => r.revision_type !== "deferred"
+      )
+      const total_savings = autoRevisions.reduce(
+        (sum: number, row: { savings?: number }) => sum + Number(row.savings ?? 0),
+        0
+      )
+      return {
+        plan_id: planId,
+        plan_title: plan?.title ?? planId,
+        plan_status: plan?.status ?? "",
+        deferred_notes: plan?.deferred_notes ?? null,
+        total_savings: Math.round(total_savings * 100) / 100,
+        revisions: autoRevisions,
+      }
+    })
+    .filter(
+      (row) =>
+        row.total_savings > 0 ||
+        row.revisions.length > 0 ||
+        Boolean(row.deferred_notes?.trim())
+    )
+    .sort(
+      (a, b) =>
+        b.total_savings - a.total_savings ||
+        b.revisions.length - a.revisions.length
+    )
+
+  const total_revised_worth = plan_revision_summaries.reduce(
+    (sum, row) => sum + row.total_savings,
+    0
   )
 
   const activePlans = planSummaries.filter((p: { status: string }) => p.status === "active")
@@ -1201,6 +1723,9 @@ export async function getBudgetDashboard(req: MedusaRequest) {
       overdue_tasks: overdueTasks,
       open_tasks_by_founder: openTasksByFounder,
       fragrance_spend_summary,
+      total_revised_worth,
+      plan_revision_count: planRevisions.length,
+      plan_revision_summaries,
     },
     catalog_products: catalogProducts,
     payment_methods: PAYMENT_METHODS,
@@ -1211,9 +1736,9 @@ export async function getBudgetDashboard(req: MedusaRequest) {
     task_statuses: TASK_STATUSES,
     task_priorities: TASK_PRIORITIES,
     founder_options: [
-      { key: "founder_1", name: settings.founder_1_name },
-      { key: "founder_2", name: settings.founder_2_name },
-      { key: "founder_3", name: settings.founder_3_name },
+      { key: "founder_1", name: settings.founder_1_name, email: settings.founder_1_email },
+      { key: "founder_2", name: settings.founder_2_name, email: settings.founder_2_email },
+      { key: "founder_3", name: settings.founder_3_name, email: settings.founder_3_email },
     ],
   }
 }

@@ -4,6 +4,7 @@ import {
   getBudgetService,
   logPlanActivity,
   PlanLineItemInput,
+  recordPlanRevisionsOnUpdate,
   replacePlanLineItems,
   toErrorResponse,
 } from "../../../budget/shared"
@@ -17,6 +18,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse): Promise<voi
       created_by?: string
       deadline?: string
       notes?: string
+      deferred_notes?: string
       funding_source_id?: string
       line_items?: PlanLineItemInput[]
     }
@@ -33,11 +35,17 @@ export async function POST(req: MedusaRequest, res: MedusaResponse): Promise<voi
         created_by: body.created_by.trim(),
         deadline: body.deadline ? new Date(body.deadline) : null,
         notes: body.notes ?? null,
+        deferred_notes: body.deferred_notes ?? null,
         funding_source_id: body.funding_source_id ?? null,
       },
     ])
 
     const lineItems = await replacePlanLineItems(req, plan.id, body.line_items ?? [])
+    await recordPlanRevisionsOnUpdate(req, plan.id, {
+      actor: body.created_by.trim(),
+      oldLineItems: [],
+      newLineItems: body.line_items,
+    })
     await logPlanActivity(req, plan.id, "created", body.created_by.trim(), {
       title: plan.title,
       line_item_count: lineItems.length,

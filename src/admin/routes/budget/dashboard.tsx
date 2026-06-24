@@ -1,14 +1,43 @@
+import { useState } from "react"
 import type { BudgetStats } from "./types"
-import { fmt } from "./types"
+import { fmt, formatRevisionChange, revisionTypeLabel } from "./types"
 
-function StatCard({ label, value, hint }: { label: string; value: string; hint?: string }) {
-  return (
-    <div className="border border-ui-border-base rounded-xl p-4 bg-ui-bg-base flex flex-col gap-1 min-w-0">
+function StatCard({
+  label,
+  value,
+  hint,
+  onClick,
+  active,
+}: {
+  label: string
+  value: string
+  hint?: string
+  onClick?: () => void
+  active?: boolean
+}) {
+  const className = [
+    "border rounded-xl p-4 bg-ui-bg-base flex flex-col gap-1 min-w-0 text-left w-full",
+    onClick ? "cursor-pointer hover:bg-ui-bg-subtle transition-colors" : "",
+    active ? "border-ui-fg-interactive ring-1 ring-ui-fg-interactive" : "border-ui-border-base",
+  ].join(" ")
+
+  const content = (
+    <>
       <span className="text-xs text-ui-fg-subtle uppercase tracking-wide">{label}</span>
       <span className="text-xl font-semibold truncate">{value}</span>
       {hint ? <span className="text-xs text-ui-fg-muted">{hint}</span> : null}
-    </div>
+    </>
   )
+
+  if (onClick) {
+    return (
+      <button type="button" className={className} onClick={onClick}>
+        {content}
+      </button>
+    )
+  }
+
+  return <div className={className}>{content}</div>
 }
 
 function Panel({
@@ -107,6 +136,8 @@ function TrendChart({
 
 export function BudgetDashboardView({ stats }: { stats: BudgetStats }) {
   const currency = stats.currency
+  const [showRevisions, setShowRevisions] = useState(false)
+  const hasRevisions = stats.plan_revision_summaries.length > 0
 
   return (
     <div className="flex flex-col gap-6">
@@ -119,6 +150,17 @@ export function BudgetDashboardView({ stats }: { stats: BudgetStats }) {
           label="Budget left"
           value={fmt(stats.budget_remaining, currency)}
           hint={`of ${fmt(stats.total_budget_this_month, currency)} planned`}
+        />
+        <StatCard
+          label="Plans revised worth"
+          value={fmt(stats.total_revised_worth, currency)}
+          hint={
+            hasRevisions
+              ? `${stats.plan_revision_summaries.length} plan(s) · click for details`
+              : "Cuts & deferrals from plan edits"
+          }
+          onClick={hasRevisions ? () => setShowRevisions((v) => !v) : undefined}
+          active={showRevisions}
         />
         <StatCard
           label="Offline revenue"
@@ -154,6 +196,68 @@ export function BudgetDashboardView({ stats }: { stats: BudgetStats }) {
           hint="Last 6 months"
         />
       </div>
+
+      {showRevisions && hasRevisions && (
+        <Panel
+          title="Plan revisions & budget cuts"
+          subtitle="What was reduced, removed, downgraded, or deferred — and why"
+        >
+          <div className="flex flex-col gap-4">
+            {stats.plan_revision_summaries.map((summary) => (
+              <div
+                key={summary.plan_id}
+                className="border border-ui-border-base rounded-lg p-4 bg-ui-bg-subtle flex flex-col gap-3"
+              >
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div>
+                    <p className="font-medium text-sm">{summary.plan_title}</p>
+                    <p className="text-xs text-ui-fg-subtle capitalize">{summary.plan_status}</p>
+                  </div>
+                  <p className="text-sm font-semibold text-amber-700 dark:text-amber-300">
+                    {fmt(summary.total_savings, currency)} revised off
+                  </p>
+                </div>
+
+                {summary.deferred_notes?.trim() && (
+                  <div className="text-xs border border-amber-200 dark:border-amber-900/40 rounded-md p-2 bg-amber-50 dark:bg-amber-950/20">
+                    <span className="font-medium text-amber-900 dark:text-amber-200">
+                      Budget note:{" "}
+                    </span>
+                    <span className="whitespace-pre-wrap">{summary.deferred_notes}</span>
+                  </div>
+                )}
+
+                <div className="flex flex-col gap-2">
+                  {summary.revisions.map((revision) => (
+                    <div
+                      key={revision.id}
+                      className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-1 text-xs border-b border-ui-border-base pb-2 last:border-0 last:pb-0"
+                    >
+                      <div className="min-w-0">
+                        <span className="font-medium">
+                          {revisionTypeLabel(revision.revision_type)}
+                        </span>
+                        <span className="text-ui-fg-subtle"> · </span>
+                        <span>{formatRevisionChange(revision)}</span>
+                        {revision.reason?.trim() && revision.revision_type !== "deferred" && (
+                          <p className="text-ui-fg-muted mt-0.5">
+                            Reason: {revision.reason}
+                          </p>
+                        )}
+                      </div>
+                      {Number(revision.savings) > 0 && (
+                        <span className="shrink-0 font-medium">
+                          −{fmt(revision.savings, currency)}
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </Panel>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <Panel title="Founder pools" subtitle="Contributions vs spend tagged to each founder">

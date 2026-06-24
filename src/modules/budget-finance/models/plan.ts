@@ -7,6 +7,7 @@ const Plan = model.define("budget_plan", {
   deadline: model.dateTime().nullable(),
   created_by: model.text(),
   notes: model.text().nullable(),
+  deferred_notes: model.text().nullable(),
   funding_source_id: model.text().nullable(),
   invoice_url: model.text().nullable(),
 })

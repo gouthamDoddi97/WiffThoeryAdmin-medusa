@@ -1,5 +1,11 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework"
-import { getBudgetService, logTaskActivity, toErrorResponse } from "../../../../budget/shared"
+import {
+  buildTaskChangeSummary,
+  getBudgetService,
+  logTaskActivity,
+  notifyFounderTask,
+  toErrorResponse,
+} from "../../../../budget/shared"
 
 export async function PATCH(req: MedusaRequest, res: MedusaResponse): Promise<void> {
   try {
@@ -56,6 +62,11 @@ export async function PATCH(req: MedusaRequest, res: MedusaResponse): Promise<vo
       await logTaskActivity(req, id, "comment", actor, { text: body.comment.trim() })
     }
 
+    const changes = buildTaskChangeSummary(existing, body)
+    const reassigned =
+      body.assigned_to != null &&
+      body.assigned_to.trim() !== existing.assigned_to
+
     const task = await service.updateFounderTasks({
       id,
       ...(body.title ? { title: body.title.trim() } : {}),
@@ -79,6 +90,16 @@ export async function PATCH(req: MedusaRequest, res: MedusaResponse): Promise<vo
     ) {
       await logTaskActivity(req, id, "attachment_added", actor, {
         attachment_url: body.attachment_url.trim(),
+      })
+    }
+
+    if (changes.length > 0 || body.comment?.trim()) {
+      await notifyFounderTask(req, {
+        task,
+        event: "updated",
+        actor,
+        changes,
+        force: reassigned,
       })
     }
 

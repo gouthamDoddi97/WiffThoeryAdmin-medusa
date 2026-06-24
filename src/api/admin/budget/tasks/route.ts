@@ -1,5 +1,5 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework"
-import { ensureBudgetSetup, getBudgetService, logTaskActivity, toErrorResponse } from "../../../budget/shared"
+import { ensureBudgetSetup, getBudgetService, logTaskActivity, notifyFounderTask, toErrorResponse } from "../../../budget/shared"
 
 export async function POST(req: MedusaRequest, res: MedusaResponse): Promise<void> {
   try {
@@ -40,6 +40,12 @@ export async function POST(req: MedusaRequest, res: MedusaResponse): Promise<voi
     await logTaskActivity(req, task.id, "created", body.created_by.trim(), {
       assigned_to: body.assigned_to,
       plan_id: body.plan_id ?? null,
+    })
+
+    await notifyFounderTask(req, {
+      task,
+      event: "created",
+      actor: body.created_by.trim(),
     })
 
     res.status(201).json({ task })

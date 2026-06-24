@@ -123,6 +123,9 @@ export type BudgetSettings = {
   founder_1_name: string
   founder_2_name: string
   founder_3_name: string
+  founder_1_email?: string | null
+  founder_2_email?: string | null
+  founder_3_email?: string | null
   default_currency: string
 }
 
@@ -155,7 +158,10 @@ export type PlanLineItem = {
 
 export type PlanInsights = {
   planned_total: number
+  order_total: number
   actual_total: number
+  recorded_expense_total?: number
+  revision_savings_total?: number
   remaining_commitment: number
   variance: number
   variance_percent: number | null
@@ -181,6 +187,76 @@ export type PlanInsights = {
   is_blocked: boolean
 }
 
+export type PlanRevision = {
+  id: string
+  plan_id: string
+  revision_type: string
+  item_label: string
+  revised_item_label?: string | null
+  category_id?: string | null
+  original_quantity?: number | null
+  revised_quantity?: number | null
+  original_unit_price?: number | null
+  revised_unit_price?: number | null
+  original_total: number
+  revised_total: number
+  savings: number
+  reason?: string | null
+  actor: string
+  created_at?: string
+}
+
+export type PlanRevisionSummary = {
+  plan_id: string
+  plan_title: string
+  plan_status: string
+  deferred_notes?: string | null
+  total_savings: number
+  revisions: PlanRevision[]
+}
+
+const REVISION_TYPE_LABELS: Record<string, string> = {
+  omitted: "Item removed",
+  qty_reduced: "Quantity reduced",
+  downgraded: "Cheaper option",
+  revised: "Revised",
+  deferred: "Deferred (not on plan)",
+}
+
+export function revisionTypeLabel(type: string) {
+  return REVISION_TYPE_LABELS[type] ?? type
+}
+
+export function formatRevisionChange(revision: PlanRevision): string {
+  if (revision.revision_type === "deferred") {
+    return revision.item_label
+  }
+  if (revision.revision_type === "omitted") {
+    const qty =
+      revision.original_quantity != null ? ` (${revision.original_quantity} removed)` : ""
+    return `${revision.item_label}${qty}`
+  }
+  const parts: string[] = [revision.item_label]
+  if (
+    revision.original_quantity != null &&
+    revision.revised_quantity != null &&
+    revision.original_quantity !== revision.revised_quantity
+  ) {
+    parts.push(`${revision.original_quantity} → ${revision.revised_quantity}`)
+  }
+  if (
+    revision.original_unit_price != null &&
+    revision.revised_unit_price != null &&
+    revision.original_unit_price !== revision.revised_unit_price
+  ) {
+    parts.push(`₹${revision.original_unit_price} → ₹${revision.revised_unit_price}`)
+  }
+  if (revision.revised_item_label && revision.revised_item_label !== revision.item_label) {
+    parts.push(`now: ${revision.revised_item_label}`)
+  }
+  return parts.join(" · ")
+}
+
 export type BudgetPlan = {
   id: string
   title: string
@@ -188,10 +264,12 @@ export type BudgetPlan = {
   deadline?: string | null
   created_by: string
   notes?: string | null
+  deferred_notes?: string | null
   funding_source_id?: string | null
   invoice_url?: string | null
   created_at: string
   line_items: PlanLineItem[]
+  revisions?: PlanRevision[]
   insights: PlanInsights
 }
 
@@ -272,6 +350,9 @@ export type BudgetStats = {
     planned: number
     actual: number
   }>
+  total_revised_worth: number
+  plan_revision_count: number
+  plan_revision_summaries: PlanRevisionSummary[]
 }
 
 export type BudgetDashboardData = {
@@ -296,7 +377,7 @@ export type BudgetDashboardData = {
   plan_statuses: Array<{ value: string; label: string }>
   task_statuses: Array<{ value: string; label: string }>
   task_priorities: Array<{ value: string; label: string }>
-  founder_options: Array<{ key: string; name: string }>
+  founder_options: Array<{ key: string; name: string; email?: string | null }>
 }
 
 export type BudgetTab =

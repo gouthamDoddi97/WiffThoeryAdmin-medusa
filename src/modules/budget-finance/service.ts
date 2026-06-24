@@ -12,6 +12,7 @@ import BudgetSettings from "./models/settings"
 import Plan from "./models/plan"
 import PlanLineItem from "./models/plan-line-item"
 import PlanActivity from "./models/plan-activity"
+import PlanRevision from "./models/plan-revision"
 import FounderTask from "./models/founder-task"
 import TaskActivity from "./models/task-activity"
 
@@ -29,6 +30,7 @@ class BudgetFinanceModuleService extends MedusaService({
   Plan,
   PlanLineItem,
   PlanActivity,
+  PlanRevision,
   FounderTask,
   TaskActivity,
 }) {}

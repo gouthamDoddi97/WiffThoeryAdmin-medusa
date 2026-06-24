@@ -3,6 +3,7 @@ import { Logger } from "@medusajs/framework/types"
 import { orderConfirmedTemplate } from "./templates/order-confirmed"
 import { passwordResetTemplate } from "./templates/password-reset"
 import { welcomeTemplate } from "./templates/welcome"
+import { taskNotificationTemplate } from "./templates/task-notification"
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const nodemailer = require("nodemailer") as {
@@ -69,6 +70,14 @@ class NodemailerNotificationService extends AbstractNotificationProviderService 
       case "welcome":
         subject = `Welcome to Whiff Theory`
         html = welcomeTemplate(data)
+        break
+      case "task-assigned":
+        subject = `[Whiff Theory] New task: ${(data.task as { title?: string })?.title ?? "Assigned to you"}`
+        html = taskNotificationTemplate({ ...data, event: "created" })
+        break
+      case "task-updated":
+        subject = `[Whiff Theory] Task updated: ${(data.task as { title?: string })?.title ?? "Task"}`
+        html = taskNotificationTemplate({ ...data, event: "updated" })
         break
       default:
         this.logger.warn(`[nodemailer] Unknown template: ${template}`)
