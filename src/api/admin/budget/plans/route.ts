@@ -7,6 +7,7 @@ import {
   recordPlanRevisionsOnUpdate,
   replacePlanLineItems,
   toErrorResponse,
+  validatePlanLineItems,
 } from "../../../budget/shared"
 
 export async function POST(req: MedusaRequest, res: MedusaResponse): Promise<void> {
@@ -27,6 +28,8 @@ export async function POST(req: MedusaRequest, res: MedusaResponse): Promise<voi
       res.status(400).json({ message: "title and created_by are required" })
       return
     }
+
+    await validatePlanLineItems(req, body.line_items)
 
     const [plan] = await service.createPlans([
       {

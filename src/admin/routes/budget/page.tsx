@@ -19,7 +19,7 @@ import {
 
 const TABS: { id: BudgetTab; label: string }[] = [
   { id: "dashboard", label: "Dashboard" },
-  { id: "plans", label: "Plans" },
+  { id: "plans", label: "Purchase plans" },
   { id: "tasks", label: "Tasks" },
   { id: "expenses", label: "Expenses" },
   { id: "budgets", label: "Budgets" },
@@ -570,7 +570,11 @@ function BudgetsTab({
 
       <div className="flex flex-col gap-4">
         <form noValidate onSubmit={saveCash} className="border border-ui-border-base rounded-xl p-4 bg-ui-bg-base flex flex-col gap-3">
-          <Heading level="h2">Cash snapshot</Heading>
+          <Heading level="h2">Bank reality check (optional)</Heading>
+          <p className="text-xs text-ui-fg-subtle">
+            Dashboard totals come from <strong>Funding</strong> pools (contributions − withdrawals − tagged spend).
+            Use this only to compare your actual bank + petty cash against that total.
+          </p>
           <div className="flex flex-col gap-1">
             <Label>Bank balance</Label>
             <Input type="number" value={cashForm.bank_balance} onChange={(e) => setCashForm({ ...cashForm, bank_balance: e.target.value })} />
@@ -583,15 +587,18 @@ function BudgetsTab({
             <Label>Recorded by</Label>
             <Input value={cashForm.recorded_by} onChange={(e) => setCashForm({ ...cashForm, recorded_by: e.target.value })} />
           </div>
-          <Button type="submit" isLoading={saving}>Save snapshot</Button>
+          <Button type="submit" isLoading={saving}>Save bank check</Button>
         </form>
 
         {data.cash_snapshots[0] && (
           <div className="border border-ui-border-base rounded-xl p-4 bg-ui-bg-subtle text-sm">
-            <p className="font-medium">Latest snapshot</p>
+            <p className="font-medium">Latest bank check</p>
             <p className="text-ui-fg-subtle mt-1">
               {formatDate(data.cash_snapshots[0].snapshot_date)} ·{" "}
               {fmt(Number(data.cash_snapshots[0].bank_balance) + Number(data.cash_snapshots[0].cash_in_hand), currency)}
+            </p>
+            <p className="text-xs text-ui-fg-muted mt-1">
+              Funding total on dashboard: {fmt(data.stats.total_cash, currency)}
             </p>
           </div>
         )}

@@ -9,6 +9,7 @@ import {
   resyncExpensesForCompletedPlan,
   syncCompletedPlanExpensesIfStale,
   toErrorResponse,
+  validatePlanLineItems,
 } from "../../../../budget/shared"
 
 export async function PATCH(req: MedusaRequest, res: MedusaResponse): Promise<void> {
@@ -63,6 +64,7 @@ export async function PATCH(req: MedusaRequest, res: MedusaResponse): Promise<vo
 
     let lineItems
     if (body.line_items) {
+      await validatePlanLineItems(req, body.line_items)
       const oldLineItems = await service.listPlanLineItems({ plan_id: id }, { take: 200 })
       await recordPlanRevisionsOnUpdate(req, id, {
         actor,

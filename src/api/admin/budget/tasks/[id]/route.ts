@@ -1,9 +1,12 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework"
 import {
+  assertTaskAssignee,
   buildTaskChangeSummary,
   getBudgetService,
   logTaskActivity,
+  logTaskFieldChanges,
   notifyFounderTask,
+  spawnNextRecurringTask,
   toErrorResponse,
 } from "../../../../budget/shared"
 
@@ -14,12 +17,12 @@ export async function PATCH(req: MedusaRequest, res: MedusaResponse): Promise<vo
     const body = req.body as {
       title?: string
       description?: string | null
-      assigned_to?: string
       due_date?: string | null
       status?: string
       priority?: string
-      plan_id?: string | null
-      is_milestone?: boolean
+      recurrence?: string
+      recurrence_interval_days?: number | null
+      recurrence_end_date?: string | null
       attachment_url?: string | null
       actor?: string
       comment?: string
@@ -31,75 +34,82 @@ export async function PATCH(req: MedusaRequest, res: MedusaResponse): Promise<vo
       return
     }
 
-    const actor = body.actor ?? existing.created_by
+    const actor = body.actor ?? existing.assigned_to
+    assertTaskAssignee(actor, existing.assigned_to)
 
-    if (body.assigned_to && body.assigned_to !== existing.assigned_to) {
-      await logTaskActivity(req, id, "reassigned", actor, {
-        from: existing.assigned_to,
-        to: body.assigned_to,
-      })
-    }
-
-    if (body.status && body.status !== existing.status) {
-      await logTaskActivity(req, id, "status_changed", actor, {
-        from: existing.status,
-        to: body.status,
-      })
-    }
-
+    const updates: Record<string, unknown> = {}
+    if (body.title !== undefined) updates.title = body.title.trim()
+    if (body.description !== undefined) updates.description = body.description
     if (body.due_date !== undefined) {
-      const oldDue = existing.due_date ? new Date(existing.due_date).toISOString() : null
-      const newDue = body.due_date ? new Date(body.due_date).toISOString() : null
-      if (oldDue !== newDue) {
-        await logTaskActivity(req, id, "due_date_changed", actor, {
-          from: oldDue,
-          to: newDue,
-        })
-      }
+      updates.due_date = body.due_date ? new Date(body.due_date) : null
     }
+    if (body.status !== undefined) updates.status = body.status
+    if (body.priority !== undefined) updates.priority = body.priority
+    if (body.recurrence !== undefined) updates.recurrence = body.recurrence
+    if (body.recurrence_interval_days !== undefined) {
+      updates.recurrence_interval_days = body.recurrence_interval_days
+    }
+    if (body.recurrence_end_date !== undefined) {
+      updates.recurrence_end_date = body.recurrence_end_date
+        ? new Date(body.recurrence_end_date)
+        : null
+    }
+    if (body.attachment_url !== undefined) {
+      updates.attachment_url = body.attachment_url?.trim() || null
+    }
+
+    await logTaskFieldChanges(req, id, actor, existing as Record<string, unknown>, updates)
 
     if (body.comment?.trim()) {
       await logTaskActivity(req, id, "comment", actor, { text: body.comment.trim() })
     }
 
-    const changes = buildTaskChangeSummary(existing, body)
-    const reassigned =
-      body.assigned_to != null &&
-      body.assigned_to.trim() !== existing.assigned_to
-
     const task = await service.updateFounderTasks({
       id,
-      ...(body.title ? { title: body.title.trim() } : {}),
+      ...(body.title !== undefined ? { title: body.title.trim() } : {}),
       ...(body.description !== undefined ? { description: body.description } : {}),
-      ...(body.assigned_to ? { assigned_to: body.assigned_to.trim() } : {}),
       ...(body.due_date !== undefined
         ? { due_date: body.due_date ? new Date(body.due_date) : null }
         : {}),
-      ...(body.status ? { status: body.status } : {}),
-      ...(body.priority ? { priority: body.priority } : {}),
-      ...(body.plan_id !== undefined ? { plan_id: body.plan_id } : {}),
-      ...(body.is_milestone !== undefined ? { is_milestone: body.is_milestone } : {}),
+      ...(body.status !== undefined ? { status: body.status } : {}),
+      ...(body.priority !== undefined ? { priority: body.priority } : {}),
+      ...(body.recurrence !== undefined ? { recurrence: body.recurrence } : {}),
+      ...(body.recurrence_interval_days !== undefined
+        ? { recurrence_interval_days: body.recurrence_interval_days }
+        : {}),
+      ...(body.recurrence_end_date !== undefined
+        ? {
+            recurrence_end_date: body.recurrence_end_date
+              ? new Date(body.recurrence_end_date)
+              : null,
+          }
+        : {}),
       ...(body.attachment_url !== undefined
         ? { attachment_url: body.attachment_url?.trim() || null }
         : {}),
     })
 
-    if (
-      body.attachment_url?.trim() &&
-      body.attachment_url.trim() !== (existing.attachment_url ?? "")
-    ) {
-      await logTaskActivity(req, id, "attachment_added", actor, {
-        attachment_url: body.attachment_url.trim(),
-      })
-    }
-
+    const changes = buildTaskChangeSummary(existing, body)
     if (changes.length > 0 || body.comment?.trim()) {
       await notifyFounderTask(req, {
         task,
         event: "updated",
         actor,
         changes,
-        force: reassigned,
+      })
+    }
+
+    if (body.status === "done" && existing.status !== "done") {
+      await spawnNextRecurringTask(req, {
+        title: task.title,
+        description: task.description,
+        assigned_to: task.assigned_to,
+        created_by: existing.created_by,
+        priority: task.priority,
+        recurrence: task.recurrence ?? "none",
+        recurrence_interval_days: task.recurrence_interval_days,
+        recurrence_end_date: task.recurrence_end_date,
+        due_date: task.due_date,
       })
     }
 
@@ -116,17 +126,20 @@ export async function DELETE(req: MedusaRequest, res: MedusaResponse): Promise<v
     const body = req.body as { actor?: string }
     const [existing] = await service.listFounderTasks({ id: req.params.id }, { take: 1 })
 
-    if (existing) {
-      await logTaskActivity(
-        req,
-        req.params.id,
-        "cancelled",
-        body?.actor ?? existing.created_by,
-        {}
-      )
-      await service.updateFounderTasks({ id: req.params.id, status: "cancelled" })
+    if (!existing) {
+      res.status(404).json({ message: "Task not found" })
+      return
     }
 
+    const actor = body?.actor ?? existing.assigned_to
+    assertTaskAssignee(actor, existing.assigned_to)
+
+    const activities = await service.listTaskActivities({ task_id: req.params.id }, { take: 200 })
+    if (activities.length) {
+      await service.deleteTaskActivities(activities.map((a: { id: string }) => a.id))
+    }
+
+    await service.deleteFounderTasks(req.params.id)
     res.json({ deleted: true, id: req.params.id })
   } catch (error) {
     const { status, message } = toErrorResponse(error)

@@ -8,6 +8,7 @@ const PlanLineItem = model.define("budget_plan_line_item", {
   quantity: model.number().default(1),
   unit_price: model.number().default(0),
   shipping: model.number().default(0),
+  tax: model.number().default(0),
   sort_order: model.number().default(0),
   notes: model.text().nullable(),
   product_id: model.text().nullable(),

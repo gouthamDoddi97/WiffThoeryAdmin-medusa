@@ -46,14 +46,12 @@ export function taskNotificationTemplate(data: Record<string, unknown>): string 
   const task = (data.task ?? {}) as Record<string, unknown>
   const changes = (data.changes ?? []) as string[]
   const actor = esc(data.actor)
-  const planTitle = data.plan_title ? esc(data.plan_title) : null
   const title = esc(task.title)
   const assignedTo = esc(task.assigned_to)
   const status = esc(task.status)
   const priority = esc(task.priority)
   const dueDate = formatDueDate(task.due_date)
   const description = task.description ? esc(task.description) : null
-  const isMilestone = Boolean(task.is_milestone)
   const headline = event === "created" ? "New task assigned to you" : "Task updated"
 
   const changeBlock =
@@ -68,8 +66,7 @@ export function taskNotificationTemplate(data: Record<string, unknown>): string 
     <h1 style="margin:0 0 20px;font-size:22px;font-weight:600;color:#ffffff;line-height:1.3;">${title}</h1>
     <p style="margin:0 0 6px;font-size:14px;color:rgba(255,255,255,0.65);"><strong style="color:#fff;">Assigned to:</strong> ${assignedTo}</p>
     <p style="margin:0 0 6px;font-size:14px;color:rgba(255,255,255,0.65);"><strong style="color:#fff;">Status:</strong> ${status} · <strong style="color:#fff;">Priority:</strong> ${priority}</p>
-    <p style="margin:0 0 6px;font-size:14px;color:rgba(255,255,255,0.65);"><strong style="color:#fff;">Due:</strong> ${dueDate}${isMilestone ? " · Milestone" : ""}</p>
-    ${planTitle ? `<p style="margin:0 0 6px;font-size:14px;color:rgba(255,255,255,0.65);"><strong style="color:#fff;">Plan:</strong> ${planTitle}</p>` : ""}
+    <p style="margin:0 0 6px;font-size:14px;color:rgba(255,255,255,0.65);"><strong style="color:#fff;">Due:</strong> ${dueDate}</p>
     ${description ? `<p style="margin:16px 0 0;font-size:14px;color:rgba(255,255,255,0.55);line-height:1.5;">${description}</p>` : ""}
     ${event !== "created" && actor ? `<p style="margin:16px 0 0;font-size:13px;color:rgba(255,255,255,0.45);">Updated by ${actor}</p>` : ""}
     ${changeBlock}

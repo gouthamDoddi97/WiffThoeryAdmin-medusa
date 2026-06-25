@@ -1,5 +1,11 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework"
-import { ensureBudgetSetup, getBudgetService, logTaskActivity, notifyFounderTask, toErrorResponse } from "../../../budget/shared"
+import {
+  ensureBudgetSetup,
+  getBudgetService,
+  logTaskActivity,
+  notifyFounderTask,
+  toErrorResponse,
+} from "../../../budget/shared"
 
 export async function POST(req: MedusaRequest, res: MedusaResponse): Promise<void> {
   try {
@@ -12,13 +18,22 @@ export async function POST(req: MedusaRequest, res: MedusaResponse): Promise<voi
       created_by?: string
       due_date?: string
       priority?: string
-      plan_id?: string
-      is_milestone?: boolean
+      recurrence?: string
+      recurrence_interval_days?: number | null
+      recurrence_end_date?: string | null
     }
 
     if (!body.title?.trim() || !body.assigned_to?.trim() || !body.created_by?.trim()) {
       res.status(400).json({
         message: "title, assigned_to, and created_by are required",
+      })
+      return
+    }
+
+    const recurrence = body.recurrence ?? "none"
+    if (recurrence === "custom" && !body.recurrence_interval_days) {
+      res.status(400).json({
+        message: "recurrence_interval_days is required for custom repeat",
       })
       return
     }
@@ -32,14 +47,20 @@ export async function POST(req: MedusaRequest, res: MedusaResponse): Promise<voi
         due_date: body.due_date ? new Date(body.due_date) : null,
         status: "todo",
         priority: body.priority ?? "medium",
-        plan_id: body.plan_id ?? null,
-        is_milestone: Boolean(body.is_milestone),
+        recurrence,
+        recurrence_interval_days:
+          recurrence === "custom" ? Number(body.recurrence_interval_days) : null,
+        recurrence_end_date: body.recurrence_end_date
+          ? new Date(body.recurrence_end_date)
+          : null,
+        plan_id: null,
+        is_milestone: false,
       },
     ])
 
     await logTaskActivity(req, task.id, "created", body.created_by.trim(), {
       assigned_to: body.assigned_to,
-      plan_id: body.plan_id ?? null,
+      recurrence,
     })
 
     await notifyFounderTask(req, {

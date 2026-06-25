@@ -128,6 +128,7 @@ type PlanLineSnapshot = {
   quantity: number
   unit_price: number
   shipping?: number
+  tax?: number
 }
 
 export function detectPlanLineRevisions(
@@ -173,6 +174,7 @@ export function detectPlanLineRevisions(
       quantity: Number(newItem.quantity),
       unit_price: Number(newItem.unit_price),
       shipping: Number(newItem.shipping ?? 0),
+      tax: Number(newItem.tax ?? 0),
     })
     if (newTotal >= oldTotal - 0.001) continue
 
@@ -262,6 +264,157 @@ export const TASK_PRIORITIES = [
   { value: "high", label: "High" },
 ]
 
+export const TASK_RECURRENCE = [
+  { value: "none", label: "Does not repeat" },
+  { value: "daily", label: "Daily" },
+  { value: "weekly", label: "Weekly" },
+  { value: "monthly", label: "Monthly" },
+  { value: "custom", label: "Every N days" },
+]
+
+export function assertTaskAssignee(actor: string, assignedTo: string) {
+  if (actor.trim() !== assignedTo.trim()) {
+    throw new MedusaError(
+      MedusaError.Types.NOT_ALLOWED,
+      "Only the assignee can update or delete this task"
+    )
+  }
+}
+
+export function computeNextTaskDueDate(
+  from: Date,
+  recurrence: string,
+  intervalDays?: number | null
+): Date | null {
+  const next = new Date(from)
+  switch (recurrence) {
+    case "daily":
+      next.setDate(next.getDate() + 1)
+      return next
+    case "weekly":
+      next.setDate(next.getDate() + 7)
+      return next
+    case "monthly":
+      next.setMonth(next.getMonth() + 1)
+      return next
+    case "custom": {
+      const days = Math.max(Number(intervalDays ?? 1), 1)
+      next.setDate(next.getDate() + days)
+      return next
+    }
+    default:
+      return null
+  }
+}
+
+export async function logTaskFieldChanges(
+  req: MedusaRequest,
+  taskId: string,
+  actor: string,
+  existing: Record<string, unknown>,
+  updates: Record<string, unknown>
+) {
+  const fields: Array<{ key: string; label: string; format?: (v: unknown) => string }> = [
+    { key: "title", label: "Title" },
+    { key: "description", label: "Description", format: (v) => String(v ?? "—") },
+    { key: "status", label: "Status" },
+    { key: "priority", label: "Priority" },
+    { key: "recurrence", label: "Repeat" },
+    {
+      key: "due_date",
+      label: "Due date",
+      format: (v) =>
+        v ? new Date(String(v)).toISOString().slice(0, 10) : "none",
+    },
+    {
+      key: "recurrence_end_date",
+      label: "Repeat until",
+      format: (v) =>
+        v ? new Date(String(v)).toISOString().slice(0, 10) : "none",
+    },
+    { key: "recurrence_interval_days", label: "Repeat every (days)" },
+  ]
+
+  for (const field of fields) {
+    if (!(field.key in updates)) continue
+    const oldRaw = existing[field.key]
+    const newRaw = updates[field.key]
+    const format = field.format ?? ((v: unknown) => String(v ?? ""))
+    if (format(oldRaw) === format(newRaw)) continue
+    await logTaskActivity(req, taskId, "field_changed", actor, {
+      field: field.label,
+      from: format(oldRaw),
+      to: format(newRaw),
+    })
+  }
+
+  if (
+    "recurrence_interval_days" in updates &&
+    updates.recurrence === "custom" &&
+    Number(updates.recurrence_interval_days) !== Number(existing.recurrence_interval_days)
+  ) {
+    // covered by field loop if recurrence_interval_days in updates
+  }
+}
+
+export async function spawnNextRecurringTask(
+  req: MedusaRequest,
+  task: {
+    title: string
+    description?: string | null
+    assigned_to: string
+    created_by: string
+    priority: string
+    recurrence: string
+    recurrence_interval_days?: number | null
+    recurrence_end_date?: string | Date | null
+    due_date?: string | Date | null
+  }
+) {
+  if (!task.recurrence || task.recurrence === "none") return null
+
+  const baseDue = task.due_date ? new Date(task.due_date) : new Date()
+  const nextDue = computeNextTaskDueDate(
+    baseDue,
+    task.recurrence,
+    task.recurrence_interval_days
+  )
+  if (!nextDue) return null
+
+  if (task.recurrence_end_date) {
+    const end = new Date(task.recurrence_end_date)
+    end.setHours(23, 59, 59, 999)
+    if (nextDue > end) return null
+  }
+
+  const service = getBudgetService(req)
+  const [created] = await service.createFounderTasks([
+    {
+      title: task.title,
+      description: task.description ?? null,
+      assigned_to: task.assigned_to,
+      created_by: task.created_by,
+      due_date: nextDue,
+      status: "todo",
+      priority: task.priority,
+      recurrence: task.recurrence,
+      recurrence_interval_days: task.recurrence_interval_days ?? null,
+      recurrence_end_date: task.recurrence_end_date
+        ? new Date(task.recurrence_end_date)
+        : null,
+      plan_id: null,
+      is_milestone: false,
+    },
+  ])
+
+  await logTaskActivity(req, created.id, "created", task.created_by, {
+    assigned_to: task.assigned_to,
+    spawned_from_recurrence: true,
+  })
+
+  return created
+}
+
 export type PlanLineItemInput = {
   id?: string
   label: string
@@ -269,6 +422,7 @@ export type PlanLineItemInput = {
   quantity: number
   unit_price: number
   shipping?: number
+  tax?: number
   sort_order?: number
   notes?: string | null
   product_id?: string | null
@@ -352,10 +506,121 @@ export function lineItemAmount(item: {
   quantity: number
   unit_price: number
   shipping?: number
+  tax?: number
 }) {
   const subtotal = Number(item.quantity) * Number(item.unit_price)
   const shipping = Number(item.shipping ?? 0)
-  return Math.round((subtotal + shipping) * 100) / 100
+  const tax = Number(item.tax ?? 0)
+  return Math.round((subtotal + shipping + tax) * 100) / 100
+}
+
+export function sumPlanLineTax(lineItems: Array<{ tax?: number | null }>): number {
+  return Math.round(
+    lineItems.reduce((sum, item) => sum + Number(item.tax ?? 0), 0) * 100
+  ) / 100
+}
+
+export type ProductMaterialSpend = {
+  oil: number
+  bottles: number
+  labels: number
+  boxes: number
+  other: number
+}
+
+export function emptyProductMaterialSpend(): ProductMaterialSpend {
+  return { oil: 0, bottles: 0, labels: 0, boxes: 0, other: 0 }
+}
+
+export function totalProductMaterialSpend(spend: ProductMaterialSpend): number {
+  return spend.oil + spend.bottles + spend.labels + spend.boxes + spend.other
+}
+
+export function addProductMaterialSpend(
+  target: ProductMaterialSpend,
+  categorySlug: string,
+  amount: number
+) {
+  if (categorySlug === "fragrance-oil") target.oil += amount
+  else if (categorySlug === "bottles-atomizers") target.bottles += amount
+  else if (categorySlug === "labels") target.labels += amount
+  else if (categorySlug === "boxes") target.boxes += amount
+  else target.other += amount
+}
+
+export function buildProductSpendSummary(
+  planSummaries: Array<{
+    status: string
+    line_items: Array<{
+      category_id: string
+      quantity: number
+      unit_price: number
+      shipping?: number
+      tax?: number
+      product_id?: string | null
+      variant_id?: string | null
+      planned_fragrance_name?: string | null
+    }>
+  }>,
+  categories: Array<{ id: string; slug: string }>,
+  catalog: CatalogMaps
+): Array<{
+  label: string
+  fragrance_key: string
+  spent: ProductMaterialSpend
+  planned: ProductMaterialSpend
+  spent_total: number
+  planned_total: number
+}> {
+  const slugById = new Map(categories.map((c) => [c.id, c.slug]))
+  const buckets = new Map<
+    string,
+    {
+      label: string
+      fragrance_key: string
+      spent: ProductMaterialSpend
+      planned: ProductMaterialSpend
+    }
+  >()
+
+  for (const plan of planSummaries) {
+    if (plan.status === "cancelled") continue
+    const bucketKey =
+      plan.status === "completed"
+        ? "spent"
+        : plan.status === "active" || plan.status === "draft"
+          ? "planned"
+          : null
+    if (!bucketKey) continue
+
+    for (const item of plan.line_items) {
+      const fragranceKey = resolveFragranceKey(item)
+      if (fragranceKey === "shared") continue
+
+      const amount = lineItemAmount(item)
+      const slug = slugById.get(item.category_id) ?? ""
+      const entry = buckets.get(fragranceKey) ?? {
+        label: resolveFragranceLabel(item, catalog),
+        fragrance_key: fragranceKey,
+        spent: emptyProductMaterialSpend(),
+        planned: emptyProductMaterialSpend(),
+      }
+      addProductMaterialSpend(entry[bucketKey], slug, amount)
+      buckets.set(fragranceKey, entry)
+    }
+  }
+
+  return [...buckets.values()]
+    .map((row) => ({
+      ...row,
+      spent_total: Math.round(totalProductMaterialSpend(row.spent) * 100) / 100,
+      planned_total: Math.round(totalProductMaterialSpend(row.planned) * 100) / 100,
+    }))
+    .filter((row) => row.spent_total > 0 || row.planned_total > 0)
+    .sort(
+      (a, b) =>
+        b.spent_total + b.planned_total - (a.spent_total + a.planned_total)
+    )
 }
 
 export async function getPlanPlannedTotal(
@@ -365,7 +630,7 @@ export async function getPlanPlannedTotal(
   const service = getBudgetService(req)
   const items = await service.listPlanLineItems({ plan_id: planId }, { take: 200 })
   return items.reduce(
-    (sum: number, item: { quantity: number; unit_price: number; shipping?: number }) =>
+    (sum: number, item: { quantity: number; unit_price: number; shipping?: number; tax?: number }) =>
       sum + lineItemAmount(item),
     0
   )
@@ -418,6 +683,7 @@ export async function createExpensesFromCompletedPlan(
         quantity: number
         unit_price: number
         shipping?: number
+        tax?: number
       }) => {
         const planned = lineItemAmount(item)
         const paid = paidByLine.get(item.id) ?? 0
@@ -485,7 +751,7 @@ export async function syncCompletedPlanExpensesIfStale(
   const service = getBudgetService(req)
   const items = await service.listPlanLineItems({ plan_id: planId }, { take: 200 })
   const planned = items.reduce(
-    (sum: number, item: { quantity: number; unit_price: number; shipping?: number }) =>
+    (sum: number, item: { quantity: number; unit_price: number; shipping?: number; tax?: number }) =>
       sum + lineItemAmount(item),
     0
   )
@@ -522,12 +788,13 @@ export function computePlanInsights(
     quantity: number
     unit_price: number
     shipping?: number
+    tax?: number
     product_id?: string | null
     variant_id?: string | null
     planned_fragrance_name?: string | null
   }>,
   expenses: Array<{ plan_id?: string | null; plan_line_item_id?: string | null; amount: number; category_id: string }>,
-  categoryMap: Map<string, { name: string }>,
+  categoryMap: Map<string, { name: string; slug?: string }>,
   tasks: Array<{ plan_id?: string | null; status: string; is_milestone?: boolean }>,
   catalog: CatalogMaps,
   revisions: Array<{ revision_type: string; savings?: number }> = []
@@ -587,21 +854,44 @@ export function computePlanInsights(
 
   const fragranceBreakdown = new Map<
     string,
-    { label: string; planned: number; actual: number; line_count: number }
+    {
+      label: string
+      fragrance_key: string
+      planned: number
+      actual: number
+      line_count: number
+      oil: number
+      bottles: number
+      labels: number
+      boxes: number
+      other: number
+    }
   >()
 
   for (const item of lineItems) {
     const key = resolveFragranceKey(item)
+    const slug = categoryMap.get(item.category_id)?.slug ?? ""
     const entry = fragranceBreakdown.get(key) ?? {
       label: resolveFragranceLabel(item, catalog),
+      fragrance_key: key,
       planned: 0,
       actual: 0,
       line_count: 0,
+      oil: 0,
+      bottles: 0,
+      labels: 0,
+      boxes: 0,
+      other: 0,
     }
     const amount = lineItemAmount(item)
     entry.planned += amount
     entry.actual += amount
     entry.line_count += 1
+    if (slug === "fragrance-oil") entry.oil += amount
+    else if (slug === "bottles-atomizers") entry.bottles += amount
+    else if (slug === "labels") entry.labels += amount
+    else if (slug === "boxes") entry.boxes += amount
+    else entry.other += amount
     fragranceBreakdown.set(key, entry)
   }
 
@@ -622,7 +912,7 @@ export function computePlanInsights(
 
   const planTasks = tasks.filter((t) => t.plan_id === plan.id)
   const openTasks = planTasks.filter((t) => t.status !== "done" && t.status !== "cancelled")
-  const openMilestones = openTasks.filter((t) => t.is_milestone)
+  void openTasks
 
   return {
     planned_total: plannedTotal,
@@ -639,9 +929,9 @@ export function computePlanInsights(
     by_fragrance: byFragrance,
     days_until_deadline: daysUntilDeadline,
     is_overdue: isOverdue,
-    open_task_count: openTasks.length,
-    open_milestone_count: openMilestones.length,
-    is_blocked: openMilestones.length > 0,
+    open_task_count: 0,
+    open_milestone_count: 0,
+    is_blocked: false,
   }
 }
 
@@ -705,8 +995,7 @@ export async function notifyFounderTask(
       status: string
       priority: string
       due_date?: string | Date | null
-      plan_id?: string | null
-      is_milestone?: boolean
+      recurrence?: string
     }
     event: "created" | "updated"
     actor: string
@@ -722,13 +1011,6 @@ export async function notifyFounderTask(
   const email = await resolveFounderEmail(req, task.assigned_to)
   if (!email) return
 
-  let planTitle: string | null = null
-  if (task.plan_id) {
-    const service = getBudgetService(req)
-    const [plan] = await service.listPlans({ id: task.plan_id }, { take: 1 })
-    planTitle = plan?.title ?? null
-  }
-
   try {
     const notificationService = req.scope.resolve<INotificationModuleService>(
       Modules.NOTIFICATION
@@ -741,7 +1023,6 @@ export async function notifyFounderTask(
         task,
         actor,
         changes,
-        plan_title: planTitle,
       },
     })
   } catch (error) {
@@ -752,33 +1033,32 @@ export async function notifyFounderTask(
 export function buildTaskChangeSummary(
   existing: {
     title: string
-    assigned_to: string
     status: string
     priority: string
     due_date?: string | Date | null
     description?: string | null
-    plan_id?: string | null
-    is_milestone?: boolean
+    recurrence?: string | null
+    recurrence_interval_days?: number | null
+    recurrence_end_date?: string | Date | null
   },
   body: {
     title?: string
-    assigned_to?: string
     status?: string
     priority?: string
     due_date?: string | null
     description?: string | null
-    plan_id?: string | null
-    is_milestone?: boolean
+    recurrence?: string
+    recurrence_interval_days?: number | null
+    recurrence_end_date?: string | null
     comment?: string
   }
 ): string[] {
   const lines: string[] = []
+  const fmtDate = (v?: string | Date | null) =>
+    v ? new Date(v).toISOString().slice(0, 10) : "none"
 
   if (body.title?.trim() && body.title.trim() !== existing.title) {
-    lines.push(`Title → ${body.title.trim()}`)
-  }
-  if (body.assigned_to?.trim() && body.assigned_to.trim() !== existing.assigned_to) {
-    lines.push(`Reassigned from ${existing.assigned_to} to ${body.assigned_to.trim()}`)
+    lines.push(`Title: ${existing.title} → ${body.title.trim()}`)
   }
   if (body.status && body.status !== existing.status) {
     lines.push(`Status: ${existing.status} → ${body.status}`)
@@ -787,20 +1067,26 @@ export function buildTaskChangeSummary(
     lines.push(`Priority: ${existing.priority} → ${body.priority}`)
   }
   if (body.due_date !== undefined) {
-    const oldDue = existing.due_date ? new Date(existing.due_date).toISOString().slice(0, 10) : null
-    const newDue = body.due_date ? new Date(body.due_date).toISOString().slice(0, 10) : null
-    if (oldDue !== newDue) {
-      lines.push(`Due date: ${oldDue ?? "none"} → ${newDue ?? "none"}`)
-    }
+    const oldDue = fmtDate(existing.due_date)
+    const newDue = body.due_date ? fmtDate(body.due_date) : "none"
+    if (oldDue !== newDue) lines.push(`Due date: ${oldDue} → ${newDue}`)
   }
   if (body.description !== undefined && body.description !== existing.description) {
     lines.push("Description updated")
   }
-  if (body.plan_id !== undefined && body.plan_id !== existing.plan_id) {
-    lines.push(body.plan_id ? "Linked to a plan" : "Unlinked from plan")
+  if (body.recurrence !== undefined && body.recurrence !== (existing.recurrence ?? "none")) {
+    lines.push(`Repeat: ${existing.recurrence ?? "none"} → ${body.recurrence}`)
   }
-  if (body.is_milestone !== undefined && body.is_milestone !== existing.is_milestone) {
-    lines.push(body.is_milestone ? "Marked as milestone" : "Unmarked as milestone")
+  if (
+    body.recurrence_interval_days !== undefined &&
+    Number(body.recurrence_interval_days) !== Number(existing.recurrence_interval_days ?? 0)
+  ) {
+    lines.push(`Repeat interval: ${existing.recurrence_interval_days ?? "—"} → ${body.recurrence_interval_days ?? "—"} days`)
+  }
+  if (body.recurrence_end_date !== undefined) {
+    const oldEnd = fmtDate(existing.recurrence_end_date)
+    const newEnd = body.recurrence_end_date ? fmtDate(body.recurrence_end_date) : "none"
+    if (oldEnd !== newEnd) lines.push(`Repeat until: ${oldEnd} → ${newEnd}`)
   }
   if (body.comment?.trim()) {
     lines.push(`Comment: ${body.comment.trim()}`)
@@ -809,12 +1095,42 @@ export function buildTaskChangeSummary(
   return lines
 }
 
+export async function validatePlanLineItems(
+  req: MedusaRequest,
+  lineItems?: PlanLineItemInput[]
+) {
+  if (!lineItems?.length) return
+
+  const service = getBudgetService(req)
+  const categories = await service.listExpenseCategories({}, { take: 100 })
+  const oilCategoryId = categories.find(
+    (c: { slug: string }) => c.slug === "fragrance-oil"
+  )?.id as string | undefined
+
+  if (!oilCategoryId) return
+
+  for (const item of lineItems) {
+    if (item.category_id !== oilCategoryId || !item.label?.trim()) continue
+    if (item.id) continue
+    if (!item.product_id?.trim()) {
+      throw new MedusaError(
+        MedusaError.Types.INVALID_DATA,
+        `New fragrance oil line "${item.label.trim()}" requires a catalog product — create the product first`
+      )
+    }
+  }
+}
+
 export async function replacePlanLineItems(
   req: MedusaRequest,
   planId: string,
   items: PlanLineItemInput[]
 ) {
   const service = getBudgetService(req)
+  const categories = await service.listExpenseCategories({}, { take: 100 })
+  const oilCategoryId = categories.find(
+    (c: { slug: string }) => c.slug === "fragrance-oil"
+  )?.id as string | undefined
   const existing = await service.listPlanLineItems({ plan_id: planId }, { take: 200 })
   const mapItem = (item: PlanLineItemInput, index: number) => ({
     label: item.label,
@@ -822,11 +1138,17 @@ export async function replacePlanLineItems(
     quantity: Number(item.quantity),
     unit_price: Number(item.unit_price),
     shipping: Number(item.shipping ?? 0),
+    tax: Number(item.tax ?? 0),
     sort_order: item.sort_order ?? index,
     notes: item.notes ?? null,
     product_id: item.product_id ?? null,
     variant_id: item.variant_id ?? null,
-    planned_fragrance_name: item.planned_fragrance_name?.trim() || null,
+    planned_fragrance_name:
+      oilCategoryId && item.category_id === oilCategoryId
+        ? item.product_id
+          ? null
+          : item.planned_fragrance_name?.trim() || null
+        : item.planned_fragrance_name?.trim() || null,
   })
 
   const hasStableIds = items.some((item) => item.id)
@@ -1235,10 +1557,10 @@ export async function getBudgetDashboard(req: MedusaRequest) {
     expenses.push(...refreshedExpenses)
   }
 
-  const categoryMap = new Map<string, { name: string }>(
+  const categoryMap = new Map<string, { name: string; slug: string }>(
     categories.map((c: { id: string; name: string; slug: string }) => [
       c.id,
-      { name: c.name },
+      { name: c.name, slug: c.slug },
     ])
   )
   const currency = settings.default_currency ?? "inr"
@@ -1342,11 +1664,13 @@ export async function getBudgetDashboard(req: MedusaRequest) {
   }
 
   const latestCash = cashSnapshots[0] as
-    | { bank_balance: number; cash_in_hand: number; snapshot_date: string }
+    | {
+        bank_balance: number
+        cash_in_hand: number
+        snapshot_date: string
+        recorded_by?: string
+      }
     | undefined
-  const totalCash = latestCash
-    ? Number(latestCash.bank_balance) + Number(latestCash.cash_in_hand)
-    : null
 
   const avgMonthlyBurn =
     monthlyTrend.length > 0
@@ -1354,10 +1678,6 @@ export async function getBudgetDashboard(req: MedusaRequest) {
           monthlyTrend.reduce((s, row) => s + row.expenses, 0) / monthlyTrend.length
         )
       : 0
-  const runwayMonths =
-    totalCash != null && avgMonthlyBurn > 0
-      ? Math.round((totalCash / avgMonthlyBurn) * 10) / 10
-      : null
 
   const txsBySource = new Map<string, Array<{ type: string; amount: number }>>()
   for (const tx of fundingTransactions) {
@@ -1393,6 +1713,15 @@ export async function getBudgetDashboard(req: MedusaRequest) {
         balance,
       }
     })
+
+  const totalFunding = Math.round(
+    founderSummaries.reduce((sum: number, f: { balance: number }) => sum + f.balance, 0) * 100
+  ) / 100
+  const totalCash = totalFunding
+  const runwayMonths =
+    totalFunding > 0 && avgMonthlyBurn > 0
+      ? Math.round((totalFunding / avgMonthlyBurn) * 10) / 10
+      : null
 
   const loanSummaries = fundingSources
     .filter((s: { type: string }) => s.type === "loan")
@@ -1610,8 +1939,68 @@ export async function getBudgetDashboard(req: MedusaRequest) {
       sum + p.insights.remaining_commitment,
     0
   )
-  const availableCash =
-    totalCash != null ? Math.round(totalCash - totalCommitted) : null
+  const availableCash = Math.round((totalFunding - totalCommitted) * 100) / 100
+
+  const bank_snapshot = latestCash
+    ? {
+        snapshot_date: String(latestCash.snapshot_date),
+        bank_balance: Number(latestCash.bank_balance),
+        cash_in_hand: Number(latestCash.cash_in_hand),
+        total: Number(latestCash.bank_balance) + Number(latestCash.cash_in_hand),
+        recorded_by: latestCash.recorded_by ?? null,
+      }
+    : null
+
+  const funding_breakdown = {
+    total: totalFunding,
+    founders: founderSummaries.map(
+      (f: {
+        id: string
+        label: string
+        contributed: number
+        withdrawn: number
+        spent: number
+        balance: number
+      }) => ({
+        id: f.id,
+        label: f.label,
+        contributed: f.contributed,
+        withdrawn: f.withdrawn,
+        spent: f.spent,
+        balance: f.balance,
+      })
+    ),
+    bank_snapshot,
+  }
+
+  const plan_commitments = activePlans
+    .map(
+      (p: {
+        id: string
+        title: string
+        insights: {
+          actual_total: number
+          order_total?: number
+          recorded_expense_total?: number
+          remaining_commitment: number
+        }
+      }) => ({
+        plan_id: p.id,
+        plan_title: p.title,
+        order_total: p.insights.order_total ?? p.insights.actual_total,
+        recorded: p.insights.recorded_expense_total ?? 0,
+        remaining_commitment: p.insights.remaining_commitment,
+      })
+    )
+    .filter((row) => row.remaining_commitment > 0.01)
+    .sort((a, b) => b.remaining_commitment - a.remaining_commitment)
+
+  const available_cash_breakdown = {
+    total_funding: totalFunding,
+    total_committed: totalCommitted,
+    available: availableCash,
+    plan_commitments,
+  }
 
   const pendingPlans = activePlans
     .filter(
@@ -1627,16 +2016,13 @@ export async function getBudgetDashboard(req: MedusaRequest) {
     )
 
   const tasksWithActivity = founderTasks.map(
-    (task: { id: string; plan_id?: string | null; assigned_to: string; status: string; due_date?: string | null; title: string; is_milestone?: boolean }) => {
+    (task: { id: string; assigned_to: string; status: string; due_date?: string | null; title: string }) => {
       const activity = taskActivities.filter((a: { task_id: string }) => a.task_id === task.id)
       let isOverdue = false
       if (task.due_date && task.status !== "done" && task.status !== "cancelled") {
         isOverdue = new Date(task.due_date) < new Date()
       }
-      const linkedPlan = task.plan_id
-        ? planSummaries.find((p: { id: string }) => p.id === task.plan_id)
-        : null
-      return { ...task, activity, is_overdue: isOverdue, plan_title: linkedPlan?.title ?? null }
+      return { ...task, activity, is_overdue: isOverdue }
     }
   )
 
@@ -1662,25 +2048,29 @@ export async function getBudgetDashboard(req: MedusaRequest) {
     {}
   )
 
-  const fragranceSpendMap = new Map<
-    string,
-    { label: string; planned: number; actual: number }
-  >()
-  for (const plan of activePlans) {
-    for (const row of plan.insights.by_fragrance ?? []) {
-      const key = row.label
-      const entry = fragranceSpendMap.get(key) ?? {
-        label: row.label,
-        planned: 0,
-        actual: 0,
-      }
-      entry.planned += row.planned
-      entry.actual += row.actual
-      fragranceSpendMap.set(key, entry)
-    }
-  }
-  const fragrance_spend_summary = [...fragranceSpendMap.values()].sort(
-    (a, b) => b.planned - a.planned
+  const product_spend_summary = buildProductSpendSummary(
+    planSummaries,
+    categories as Array<{ id: string; slug: string }>,
+    catalog
+  )
+  const total_product_spend = product_spend_summary.reduce(
+    (sum, row) => sum + row.spent_total,
+    0
+  )
+
+  const completedPlans = planSummaries.filter((p: { status: string }) => p.status === "completed")
+  const claimable_tax_breakdown = completedPlans
+    .map((plan: { id: string; title: string; line_items: Array<{ tax?: number | null }> }) => ({
+      plan_id: plan.id,
+      plan_title: plan.title,
+      tax_total: sumPlanLineTax(plan.line_items),
+    }))
+    .filter((row: { tax_total: number }) => row.tax_total > 0)
+    .sort((a: { tax_total: number }, b: { tax_total: number }) => b.tax_total - a.tax_total)
+
+  const total_claimable_tax = claimable_tax_breakdown.reduce(
+    (sum: number, row: { tax_total: number }) => sum + row.tax_total,
+    0
   )
 
   return {
@@ -1713,6 +2103,8 @@ export async function getBudgetDashboard(req: MedusaRequest) {
       total_cash: totalCash,
       total_committed: totalCommitted,
       available_cash: availableCash,
+      funding_breakdown,
+      available_cash_breakdown,
       avg_monthly_burn: avgMonthlyBurn,
       runway_months: runwayMonths,
       founder_summaries: founderSummaries,
@@ -1723,10 +2115,13 @@ export async function getBudgetDashboard(req: MedusaRequest) {
       pending_plans: pendingPlans,
       overdue_tasks: overdueTasks,
       open_tasks_by_founder: openTasksByFounder,
-      fragrance_spend_summary,
+      product_spend_summary,
+      total_product_spend,
       total_revised_worth,
       plan_revision_count: planRevisions.length,
       plan_revision_summaries,
+      total_claimable_tax,
+      claimable_tax_breakdown,
     },
     catalog_products: catalogProducts,
     payment_methods: PAYMENT_METHODS,
@@ -1736,6 +2131,7 @@ export async function getBudgetDashboard(req: MedusaRequest) {
     plan_statuses: PLAN_STATUSES,
     task_statuses: TASK_STATUSES,
     task_priorities: TASK_PRIORITIES,
+    task_recurrence: TASK_RECURRENCE,
     founder_options: [
       { key: "founder_1", name: settings.founder_1_name, email: settings.founder_1_email },
       { key: "founder_2", name: settings.founder_2_name, email: settings.founder_2_email },

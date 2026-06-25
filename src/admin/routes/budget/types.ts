@@ -143,6 +143,7 @@ export type PlanLineItem = {
   quantity: number
   unit_price: number
   shipping: number
+  tax: number
   sort_order: number
   notes?: string | null
   product_id?: string | null
@@ -176,9 +177,15 @@ export type PlanInsights = {
   }>
   by_fragrance: Array<{
     label: string
+    fragrance_key: string
     planned: number
     actual: number
     line_count: number
+    oil: number
+    bottles: number
+    labels: number
+    boxes: number
+    other: number
   }>
   days_until_deadline: number | null
   is_overdue: boolean
@@ -291,12 +298,29 @@ export type FounderTask = {
   due_date?: string | null
   status: string
   priority: string
-  plan_id?: string | null
-  is_milestone: boolean
+  recurrence?: string
+  recurrence_interval_days?: number | null
+  recurrence_end_date?: string | null
   attachment_url?: string | null
   activity: TaskActivity[]
   is_overdue: boolean
-  plan_title?: string | null
+}
+
+export type ProductMaterialSpend = {
+  oil: number
+  bottles: number
+  labels: number
+  boxes: number
+  other: number
+}
+
+export type ProductSpendSummary = {
+  label: string
+  fragrance_key: string
+  spent: ProductMaterialSpend
+  planned: ProductMaterialSpend
+  spent_total: number
+  planned_total: number
 }
 
 export type BudgetStats = {
@@ -319,9 +343,39 @@ export type BudgetStats = {
   spend_by_category: Array<{ label: string; value: number; category_id: string }>
   monthly_trend: Array<{ label: string; expenses: number; revenue: number }>
   latest_cash: CashSnapshot | null
-  total_cash: number | null
+  total_cash: number
   total_committed: number
-  available_cash: number | null
+  available_cash: number
+  funding_breakdown: {
+    total: number
+    founders: Array<{
+      id: string
+      label: string
+      contributed: number
+      withdrawn: number
+      spent: number
+      balance: number
+    }>
+    bank_snapshot: {
+      snapshot_date: string
+      bank_balance: number
+      cash_in_hand: number
+      total: number
+      recorded_by?: string | null
+    } | null
+  }
+  available_cash_breakdown: {
+    total_funding: number
+    total_committed: number
+    available: number
+    plan_commitments: Array<{
+      plan_id: string
+      plan_title: string
+      order_total: number
+      recorded: number
+      remaining_commitment: number
+    }>
+  }
   avg_monthly_burn: number
   runway_months: number | null
   founder_summaries: Array<{
@@ -345,14 +399,17 @@ export type BudgetStats = {
   pending_plans: BudgetPlan[]
   overdue_tasks: FounderTask[]
   open_tasks_by_founder: Record<string, number>
-  fragrance_spend_summary: Array<{
-    label: string
-    planned: number
-    actual: number
-  }>
+  product_spend_summary: ProductSpendSummary[]
+  total_product_spend: number
   total_revised_worth: number
   plan_revision_count: number
   plan_revision_summaries: PlanRevisionSummary[]
+  total_claimable_tax: number
+  claimable_tax_breakdown: Array<{
+    plan_id: string
+    plan_title: string
+    tax_total: number
+  }>
 }
 
 export type BudgetDashboardData = {
@@ -377,6 +434,7 @@ export type BudgetDashboardData = {
   plan_statuses: Array<{ value: string; label: string }>
   task_statuses: Array<{ value: string; label: string }>
   task_priorities: Array<{ value: string; label: string }>
+  task_recurrence: Array<{ value: string; label: string }>
   founder_options: Array<{ key: string; name: string; email?: string | null }>
 }
 

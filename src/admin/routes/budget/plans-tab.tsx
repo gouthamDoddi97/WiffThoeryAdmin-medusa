@@ -25,6 +25,7 @@ type LineDraft = {
   quantity: string
   unit_price: string
   shipping: string
+  tax: string
   product_id: string
   variant_id: string
   planned_fragrance_name: string
@@ -53,6 +54,7 @@ function newLine(categories: ExpenseCategory[]): LineDraft {
     quantity: "1",
     unit_price: "0",
     shipping: "0",
+    tax: "0",
     product_id: "",
     variant_id: "",
     planned_fragrance_name: "",
@@ -61,6 +63,34 @@ function newLine(categories: ExpenseCategory[]): LineDraft {
 
 function categorySlug(categories: ExpenseCategory[], categoryId: string) {
   return categories.find((c) => c.id === categoryId)?.slug ?? ""
+}
+
+function isFragranceOilCategory(categories: ExpenseCategory[], categoryId: string) {
+  return categorySlug(categories, categoryId) === "fragrance-oil"
+}
+
+function validateFragranceOilProductSelection(
+  categories: ExpenseCategory[],
+  lines: Array<{ id?: string; label: string; category_id: string; product_id: string }>
+): string | null {
+  for (const line of lines) {
+    if (!line.label.trim()) continue
+    if (
+      isFragranceOilCategory(categories, line.category_id) &&
+      !line.id &&
+      !line.product_id.trim()
+    ) {
+      return `New fragrance oil lines require a catalog product — create the product first, then select it here.`
+    }
+  }
+  return null
+}
+
+function isLegacyOilLine(
+  categories: ExpenseCategory[],
+  line: { id?: string; category_id: string; product_id: string }
+) {
+  return Boolean(line.id) && isFragranceOilCategory(categories, line.category_id) && !line.product_id.trim()
 }
 
 const FRAGRANCE_TAGGING_CATEGORY_SLUGS = new Set([
@@ -106,7 +136,8 @@ function formatLineQuantity(
 function lineDraftTotal(line: LineDraft) {
   return (
     Number(line.quantity || 0) * Number(line.unit_price || 0) +
-    Number(line.shipping || 0)
+    Number(line.shipping || 0) +
+    Number(line.tax || 0)
   )
 }
 
@@ -119,14 +150,28 @@ function planLineToDraft(item: PlanLineItem): LineDraft {
     quantity: String(item.quantity),
     unit_price: String(item.unit_price),
     shipping: String(item.shipping ?? 0),
+    tax: String(item.tax ?? 0),
     product_id: item.product_id ?? "",
     variant_id: item.variant_id ?? "",
     planned_fragrance_name: item.planned_fragrance_name ?? "",
   }
 }
 
+function formatMaterialParts(
+  row: { oil: number; bottles: number; labels: number; boxes: number },
+  currency: string
+): string {
+  const parts: string[] = []
+  if (row.oil > 0) parts.push(`oil ${fmt(row.oil, currency)}`)
+  if (row.bottles > 0) parts.push(`bottles ${fmt(row.bottles, currency)}`)
+  if (row.labels > 0) parts.push(`labels ${fmt(row.labels, currency)}`)
+  if (row.boxes > 0) parts.push(`boxes ${fmt(row.boxes, currency)}`)
+  return parts.length ? parts.join(" · ") : "—"
+}
+
 function linePayload(line: LineDraft, index: number, categories: ExpenseCategory[]) {
   const showFragrance = categoryShowsFragranceTagging(categories, line.category_id)
+  const isOil = isFragranceOilCategory(categories, line.category_id)
   return {
     ...(line.id ? { id: line.id } : {}),
     label: line.label.trim(),
@@ -134,6 +179,7 @@ function linePayload(line: LineDraft, index: number, categories: ExpenseCategory
     quantity: Number(line.quantity),
     unit_price: Number(line.unit_price),
     shipping: Number(line.shipping || 0),
+    tax: Number(line.tax || 0),
     sort_order: index,
     product_id: showFragrance && line.product_id ? line.product_id : null,
     variant_id:
@@ -206,6 +252,11 @@ function PlanDetail({
     }
     if (!editTitle.trim() || !editLines.some((l) => l.label.trim())) {
       toast.error("Title and at least one line item are required")
+      return
+    }
+    const oilError = validateFragranceOilProductSelection(categories, editLines)
+    if (oilError) {
+      toast.error(oilError)
       return
     }
     setSaving(true)
@@ -331,7 +382,6 @@ function PlanDetail({
             )}
             {plan.deadline ? ` · Due ${formatDate(plan.deadline)}` : ""}
             {insights.is_overdue ? " · Overdue" : ""}
-            {insights.is_blocked ? " · Blocked by open milestones" : ""}
           </p>
         </div>
         <div className="flex gap-2 flex-wrap items-center">
@@ -583,19 +633,32 @@ function PlanDetail({
         </div>
       </div>
 
-      {insights.by_fragrance.length > 0 && (
+      {insights.by_fragrance.filter((row) => row.fragrance_key !== "shared").length > 0 && (
         <div className="border border-ui-border-base rounded-md p-3 bg-ui-bg-base">
-          <p className="text-xs font-medium text-ui-fg-subtle mb-2">By fragrance / product</p>
-          <div className="flex flex-col gap-1">
-            {insights.by_fragrance.map((row) => (
-              <div key={row.label} className="flex justify-between text-xs gap-2">
-                <span className="truncate">{row.label}</span>
-                <span className="text-ui-fg-subtle shrink-0">
-                  {fmt(row.actual, currency)} / {fmt(row.planned, currency)} planned
-                </span>
-              </div>
-            ))}
+          <p className="text-xs font-medium text-ui-fg-subtle mb-2">Spend by product</p>
+          <div className="flex flex-col gap-2">
+            {insights.by_fragrance
+              .filter((row) => row.fragrance_key !== "shared")
+              .map((row) => (
+                <div key={row.fragrance_key} className="flex flex-col gap-0.5 text-xs">
+                  <div className="flex justify-between gap-2">
+                    <span className="font-medium truncate">{row.label}</span>
+                    <span className="text-ui-fg-subtle shrink-0">{fmt(row.actual, currency)}</span>
+                  </div>
+                  <span className="text-ui-fg-muted">{formatMaterialParts(row, currency)}</span>
+                </div>
+              ))}
           </div>
+        </div>
+      )}
+
+      {insights.by_fragrance.some((row) => row.fragrance_key === "shared") && (
+        <div className="border border-dashed border-ui-border-base rounded-md p-3 bg-ui-bg-subtle text-xs text-ui-fg-subtle">
+          Shared packaging (not tagged to a product):{" "}
+          {fmt(
+            insights.by_fragrance.find((row) => row.fragrance_key === "shared")?.actual ?? 0,
+            currency
+          )}
         </div>
       )}
 
@@ -610,6 +673,7 @@ function PlanDetail({
               <th className="text-left pb-2 pr-2">Category</th>
               <th className="text-right pb-2 pr-2">Qty</th>
               <th className="text-right pb-2 pr-2">Shipping</th>
+              <th className="text-right pb-2 pr-2">Tax</th>
               <th className="text-right pb-2 pr-2">Planned</th>
               <th className="text-right pb-2">Actual</th>
             </tr>
@@ -634,6 +698,9 @@ function PlanDetail({
                   </td>
                   <td className="py-2 pr-2 text-right text-ui-fg-subtle">
                     {Number(item.shipping ?? 0) > 0 ? fmt(item.shipping ?? 0, currency) : "—"}
+                  </td>
+                  <td className="py-2 pr-2 text-right text-ui-fg-subtle">
+                    {Number(item.tax ?? 0) > 0 ? fmt(item.tax ?? 0, currency) : "—"}
                   </td>
                   <td className="py-2 pr-2 text-right">{fmt(item.planned ?? 0, currency)}</td>
                   <td className="py-2 text-right">{fmt(item.actual ?? 0, currency)}</td>
@@ -671,6 +738,7 @@ function LineItemRow({
   const isOil = categorySlug(categories, line.category_id) === "fragrance-oil"
   const oilCategory = categories.find((c) => c.slug === "fragrance-oil")
   const showFragranceTagging = categoryShowsFragranceTagging(categories, line.category_id)
+  const legacyOil = isLegacyOilLine(categories, line)
 
   return (
     <div className="border border-ui-border-base rounded-lg p-3 bg-ui-bg-subtle flex flex-col gap-3">
@@ -691,12 +759,14 @@ function LineItemRow({
             onChange={(e) => {
               const category_id = e.target.value
               const tagging = categoryShowsFragranceTagging(categories, category_id)
+              const isOilCategory = isFragranceOilCategory(categories, category_id)
               onChange(index, {
                 ...line,
                 category_id,
                 ...(tagging
                   ? {}
                   : { product_id: "", variant_id: "", planned_fragrance_name: "" }),
+                ...(isOilCategory ? { planned_fragrance_name: "" } : {}),
               })
             }}
           >
@@ -736,6 +806,16 @@ function LineItemRow({
               onChange={(e) => onChange(index, { ...line, shipping: e.target.value })}
             />
           </div>
+          <div className="flex flex-col gap-1 flex-1 min-w-[5rem]">
+            <Label className="text-xs">Tax ₹</Label>
+            <Input
+              type="number"
+              min={0}
+              step="0.01"
+              value={line.tax}
+              onChange={(e) => onChange(index, { ...line, tax: e.target.value })}
+            />
+          </div>
         </div>
       </div>
 
@@ -745,10 +825,81 @@ function LineItemRow({
         </p>
       )}
 
-      {showFragranceTagging && (
+      {isOil && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+          {legacyOil && (
+            <p className="text-xs text-amber-700 dark:text-amber-300 md:col-span-2">
+              Legacy oil line — not linked to a catalog product yet. You can save as-is, or select a product below when ready.
+            </p>
+          )}
+          <div className="flex flex-col gap-1 md:col-span-2">
+            <Label className="text-xs">
+              Perfume / product {!legacyOil ? <span className="text-red-500">*</span> : "(optional — link when ready)"}
+            </Label>
+            <select
+              className={`border rounded-md px-2 py-1.5 text-sm bg-ui-bg-base ${
+                line.product_id || legacyOil ? "border-ui-border-base" : "border-red-400"
+              }`}
+              value={line.product_id}
+              onChange={(e) =>
+                onChange(index, {
+                  ...line,
+                  product_id: e.target.value,
+                  variant_id: "",
+                  planned_fragrance_name: e.target.value ? "" : line.planned_fragrance_name,
+                })
+              }
+            >
+              <option value="">{legacyOil ? "Not linked yet" : "Select product…"}</option>
+              {products.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.title}
+                </option>
+              ))}
+            </select>
+            {!legacyOil && (
+              <p className="text-xs text-ui-fg-subtle">
+                Not listed?{" "}
+                <a href="/app/products" className="underline text-ui-fg-interactive" target="_blank" rel="noreferrer">
+                  Create the product in Catalog
+                </a>{" "}
+                first, then refresh this page.
+              </p>
+            )}
+          </div>
+          {!line.product_id && (
+            <div className="flex flex-col gap-1 md:col-span-2">
+              <Label className="text-xs">Fragrance name (legacy / until product exists)</Label>
+              <Input
+                placeholder="e.g. Oud Maracuja"
+                value={line.planned_fragrance_name}
+                onChange={(e) => onChange(index, { ...line, planned_fragrance_name: e.target.value })}
+              />
+            </div>
+          )}
+          <div className="flex flex-col gap-1">
+            <Label className="text-xs">Variant (optional)</Label>
+            <select
+              className="border border-ui-border-base rounded-md px-2 py-1.5 text-sm bg-ui-bg-base"
+              value={line.variant_id}
+              disabled={!line.product_id}
+              onChange={(e) => onChange(index, { ...line, variant_id: e.target.value })}
+            >
+              <option value="">Any / whole product</option>
+              {variants.map((v) => (
+                <option key={v.id} value={v.id}>
+                  {v.title}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+      )}
+
+      {showFragranceTagging && !isOil && (
       <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
         <div className="flex flex-col gap-1">
-          <Label className="text-xs">Existing product (optional)</Label>
+          <Label className="text-xs">For product (optional)</Label>
           <select
             className="border border-ui-border-base rounded-md px-2 py-1.5 text-sm bg-ui-bg-base"
             value={line.product_id}
@@ -761,7 +912,7 @@ function LineItemRow({
               })
             }
           >
-            <option value="">— Not in catalog yet —</option>
+            <option value="">Shared / not tagged</option>
             {products.map((p) => (
               <option key={p.id} value={p.id}>{p.title}</option>
             ))}
@@ -782,9 +933,9 @@ function LineItemRow({
           </select>
         </div>
         <div className="flex flex-col gap-1">
-          <Label className="text-xs">Planned fragrance name</Label>
+          <Label className="text-xs">Or planned name (optional)</Label>
           <Input
-            placeholder="Bright Crystal clone"
+            placeholder="If product not in catalog yet"
             disabled={Boolean(line.product_id)}
             value={line.planned_fragrance_name}
             onChange={(e) => onChange(index, { ...line, planned_fragrance_name: e.target.value })}
@@ -795,7 +946,16 @@ function LineItemRow({
 
       <div className="flex justify-between items-center">
         <p className="text-xs text-ui-fg-subtle">
-          {showFragranceTagging ? (
+          {isOil ? (
+            <>
+              {line.product_id
+                ? "Tagged to catalog product"
+                : legacyOil
+                  ? "Legacy line — not linked to catalog yet"
+                  : "Select a catalog product (required)"}
+              {" · "}
+            </>
+          ) : showFragranceTagging ? (
             <>
               {!line.product_id && !line.planned_fragrance_name.trim()
                 ? "Shared / unassigned — packaging used across fragrances"
@@ -872,6 +1032,11 @@ export function PlansTab({
       toast.error("Title and at least one line item are required")
       return
     }
+    const oilError = validateFragranceOilProductSelection(sortedCategories, lines)
+    if (oilError) {
+      toast.error(oilError)
+      return
+    }
     setSaving(true)
     try {
       await api("/admin/budget/plans", {
@@ -905,11 +1070,15 @@ export function PlansTab({
   return (
     <div className="flex flex-col gap-6">
       <form noValidate onSubmit={saveDraft} className="border border-ui-border-base rounded-xl p-4 bg-ui-bg-base flex flex-col gap-4">
-        <Heading level="h2">New plan</Heading>
+        <Heading level="h2">New purchase plan</Heading>
         <p className="text-sm text-ui-fg-subtle">
-          For material lines (oil, bottles, labels, boxes, product/COGS), optionally tag each line to a catalog product, a planned fragrance name, or leave both empty for shared stock.
-          Fragrance oil: enter quantity in <strong>kg</strong> (1 = 1 kg) and unit price as <strong>₹ per kg</strong>.
-          Add <strong>shipping ₹</strong> per line when freight is charged separately.
+          For packaging (bottles, atomizers, labels, boxes), optionally tag each line to a product — leave empty for shared stock.
+          <strong> Fragrance oil</strong> must be linked to a catalog product —{" "}
+          <a href="/app/products" className="underline text-ui-fg-interactive" target="_blank" rel="noreferrer">
+            create the product first
+          </a>
+          {" "}if it is not listed yet. Enter quantity in <strong>kg</strong> (1 = 1 kg) and unit price as <strong>₹ per kg</strong>.
+          Add <strong>shipping ₹</strong> and <strong>tax ₹</strong> per line when charged separately.
         </p>
         <div className="grid md:grid-cols-2 gap-4">
           <div className="flex flex-col gap-1">
@@ -991,7 +1160,7 @@ export function PlansTab({
 
       <div className="flex flex-col gap-3">
         <div className="flex items-center justify-between gap-3">
-          <Heading level="h2">Plans</Heading>
+          <Heading level="h2">Purchase plans</Heading>
           <select
             className="border border-ui-border-base rounded-md px-2 py-1.5 text-sm bg-ui-bg-base"
             value={filter}
@@ -1004,7 +1173,7 @@ export function PlansTab({
           </select>
         </div>
         {filteredPlans.length === 0 ? (
-          <p className="text-sm text-ui-fg-subtle">No plans yet.</p>
+          <p className="text-sm text-ui-fg-subtle">No purchase plans yet.</p>
         ) : (
           <div className="flex flex-col gap-5">
           {filteredPlans.map((plan) => (
