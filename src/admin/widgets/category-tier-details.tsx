@@ -167,7 +167,7 @@ const CategoryTierDetailsWidget = ({ data }: { data: AdminProductCategory }) => 
           <Input
             id="accent_color"
             name="accent_color"
-            placeholder="e.g. #4FDBCC"
+            placeholder="e.g. #75542E (Popular), #8A3550 (Unique), #1B4538 (IDGF)"
             value={details.accent_color}
             onChange={handleChange}
           />
