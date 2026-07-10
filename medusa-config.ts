@@ -1,6 +1,21 @@
 import { loadEnv, defineConfig } from '@medusajs/framework/utils'
+import { getRazorpayOptions, isRazorpayConfigured } from './src/lib/integrations/config'
 
 loadEnv(process.env.NODE_ENV || 'development', process.cwd())
+
+const paymentProviders: Array<{
+  resolve: string
+  id: string
+  options?: Record<string, unknown>
+}> = []
+
+if (isRazorpayConfigured()) {
+  paymentProviders.push({
+    resolve: '@sgftech/payment-razorpay',
+    id: 'razorpay',
+    options: getRazorpayOptions(),
+  })
+}
 
 module.exports = defineConfig({
   projectConfig: {
@@ -50,6 +65,9 @@ module.exports = defineConfig({
       resolve: "./src/modules/ugc-gallery",
     },
     {
+      resolve: "./src/modules/fragrance-notes",
+    },
+    {
       resolve: "./src/modules/product-reviews",
     },
     {
@@ -58,6 +76,16 @@ module.exports = defineConfig({
     {
       resolve: "./src/modules/budget-finance",
     },
+    ...(paymentProviders.length
+      ? [
+          {
+            resolve: "@medusajs/medusa/payment",
+            options: {
+              providers: paymentProviders,
+            },
+          },
+        ]
+      : []),
     {
       resolve: "@medusajs/medusa/notification",
       options: {

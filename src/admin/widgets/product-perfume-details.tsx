@@ -2,6 +2,7 @@ import { defineWidgetConfig } from "@medusajs/admin-sdk"
 import { AdminProduct } from "@medusajs/framework/types"
 import { Button, Heading, Input, Label, Textarea, toast } from "@medusajs/ui"
 import { useEffect, useState } from "react"
+import NoteTagsInput from "../components/note-tags-input"
 
 type PerfumeDetails = {
   certifications: string
@@ -334,14 +335,13 @@ const PerfumeDetailsWidget = ({ data }: { data: AdminProduct }) => {
         {/* Scene 2 */}
         <div className="flex flex-col gap-y-2 rounded-md border border-ui-border-base p-3">
           <p className="text-xs font-medium text-ui-fg-base">Scene 2 — Smells Like</p>
-          <Input
+          <NoteTagsInput
             id="top_notes"
-            name="top_notes"
-            placeholder="e.g. Bergamot, Angelica, Patchouli, Amber, Musk"
+            label="Top notes"
+            hint="Comma-separated — suggests from your note library"
             value={details.top_notes}
-            onChange={handleChange}
+            onChange={(v) => setDetails((prev) => ({ ...prev, top_notes: v }))}
           />
-          <p className="text-xs text-ui-fg-muted">Comma-separated ingredients shown on scene 2</p>
         </div>
 
         {/* Scene 3 */}
@@ -354,6 +354,32 @@ const PerfumeDetailsWidget = ({ data }: { data: AdminProduct }) => {
             value={details.scent_story}
             onChange={handleChange}
             rows={4}
+          />
+        </div>
+      </div>
+
+      {/* ── Note pyramid (PDP diagram) ── */}
+      <div className="flex flex-col gap-y-3">
+        <div>
+          <Label size="small" className="font-semibold">Note pyramid (PDP)</Label>
+          <p className="text-ui-fg-muted text-xs mt-0.5">
+            Heart and base tiers on the product page. Top notes are shared with Scene 2
+            above. New notes join the library automatically — attach images under
+            Fragrance Notes.
+          </p>
+        </div>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <NoteTagsInput
+            id="middle_notes"
+            label="Heart"
+            value={details.middle_notes}
+            onChange={(v) => setDetails((prev) => ({ ...prev, middle_notes: v }))}
+          />
+          <NoteTagsInput
+            id="base_notes"
+            label="Base"
+            value={details.base_notes}
+            onChange={(v) => setDetails((prev) => ({ ...prev, base_notes: v }))}
           />
         </div>
       </div>

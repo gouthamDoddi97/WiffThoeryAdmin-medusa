@@ -1,6 +1,7 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework"
 import { PERFUME_DETAILS_MODULE } from "../../../../../modules/perfume-details"
 import PerfumeDetailsModuleService from "../../../../../modules/perfume-details/service"
+import { upsertNotesFromText } from "../../../../../lib/fragrance-notes/alerts"
 
 type PerfumeDetailsBody = {
   certifications?: string
@@ -60,6 +61,13 @@ export async function POST(
       ...req.body,
     })
   }
+
+  await upsertNotesFromText(
+    req.scope,
+    req.body.top_notes,
+    req.body.middle_notes,
+    req.body.base_notes
+  )
 
   res.json({ perfume_details: details })
 }

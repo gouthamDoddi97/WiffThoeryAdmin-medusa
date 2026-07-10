@@ -3,6 +3,7 @@ import {
   ensureProductMetadataField,
   filterOfflineStoreProducts,
 } from "./middlewares/filter-offline-store-products"
+import { requireStockLocationAddress } from "./middlewares/validate-stock-location-address"
 
 const offlineProductMiddlewares = [
   ensureProductMetadataField,
@@ -22,6 +23,16 @@ export default defineMiddlewares({
     {
       matcher: "/store/collections*",
       middlewares: offlineProductMiddlewares,
+    },
+    {
+      methods: ["POST"],
+      matcher: "/admin/stock-locations",
+      middlewares: [requireStockLocationAddress],
+    },
+    {
+      methods: ["POST"],
+      matcher: "/admin/stock-locations/:id",
+      middlewares: [requireStockLocationAddress],
     },
   ],
 })

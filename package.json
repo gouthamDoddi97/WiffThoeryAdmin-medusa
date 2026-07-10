@@ -15,6 +15,9 @@
   "scripts": {
     "build": "medusa build",
     "seed": "medusa exec ./src/scripts/seed.ts",
+    "setup:india-shipping": "medusa exec ./src/scripts/setup-india-shipping.ts",
+    "test:shiprocket": "medusa exec ./src/scripts/test-shiprocket.ts",
+    "sync:shiprocket-pickup": "medusa exec ./src/scripts/sync-shiprocket-pickup.ts",
     "start": "medusa start",
     "dev": "medusa develop",
     "test:integration:http": "TEST_TYPE=integration:http NODE_OPTIONS=--experimental-vm-modules jest --silent=false --runInBand --forceExit",
@@ -26,6 +29,7 @@
     "@medusajs/cli": "2.13.1",
     "@medusajs/framework": "2.13.1",
     "@medusajs/medusa": "2.13.1",
+    "@sgftech/payment-razorpay": "^2.1.11",
     "nodemailer": "^8.0.4",
     "resend": "^6.14.0",
     "sharp": "^0.35.2"
