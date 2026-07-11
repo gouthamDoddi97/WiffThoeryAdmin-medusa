@@ -2,6 +2,12 @@ import { MedusaRequest, MedusaResponse } from "@medusajs/framework"
 import { FRAGRANCE_NOTES_MODULE } from "../../../modules/fragrance-notes"
 import { normalizeNoteName } from "../../../lib/fragrance-notes/utils"
 
+type FragranceNoteRow = {
+  name: string
+  display_name: string
+  image_url?: string | null
+}
+
 export async function GET(
   req: MedusaRequest,
   res: MedusaResponse
@@ -20,13 +26,8 @@ export async function GET(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const service = req.scope.resolve(FRAGRANCE_NOTES_MODULE) as any
   const all = await service.listFragranceNotes({}, { take: 500 })
-  const map = new Map(
-    (all ?? []).map(
-      (n: { name: string; display_name: string; image_url?: string | null }) => [
-        n.name,
-        n,
-      ]
-    )
+  const map = new Map<string, FragranceNoteRow>(
+    (all ?? []).map((n: FragranceNoteRow) => [n.name, n])
   )
 
   const fragrance_notes = names.map((name) => {

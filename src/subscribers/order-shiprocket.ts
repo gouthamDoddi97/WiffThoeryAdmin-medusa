@@ -12,7 +12,7 @@ export default async function orderShiprocketHandler({
   let order: Awaited<ReturnType<typeof orderService.retrieveOrder>>
   try {
     order = await orderService.retrieveOrder(data.id, {
-      relations: ["items", "items.item", "shipping_address"],
+      relations: ["items", "shipping_address"],
     })
   } catch (e) {
     console.error("[order-shiprocket] Failed to retrieve order", e)
@@ -68,8 +68,8 @@ export default async function orderShiprocketHandler({
       },
       items:
         order.items?.map((line) => ({
-          title: line.title ?? line.item?.title ?? "Fragrance",
-          sku: line.variant_sku ?? line.item?.variant_sku ?? undefined,
+          title: line.title ?? line.product_title ?? "Fragrance",
+          sku: line.variant_sku ?? undefined,
           quantity: line.quantity ?? 1,
           unitPrice: Math.round(Number(line.unit_price ?? 0) / 100),
         })) ?? [],

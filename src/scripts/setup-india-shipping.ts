@@ -7,6 +7,7 @@ import {
   createShippingOptionsWorkflow,
   createTaxRegionsWorkflow,
   linkSalesChannelsToStockLocationWorkflow,
+  updateShippingOptionsWorkflow,
 } from "@medusajs/medusa/core-flows"
 
 /**
@@ -27,10 +28,16 @@ export default async function setupIndiaShipping({ container }: ExecArgs) {
     fields: ["id", "name", "currency_code", "countries.iso_2"],
   })
 
-  const indiaRegion = (regions ?? []).find(
-    (region: { currency_code?: string; countries?: { iso_2?: string }[] }) =>
+  type RegionRow = {
+    id: string
+    currency_code?: string | null
+    countries?: Array<{ iso_2?: string | null } | null> | null
+  }
+
+  const indiaRegion = (regions as RegionRow[] | undefined)?.find(
+    (region) =>
       region.currency_code?.toLowerCase() === "inr" ||
-      region.countries?.some((c) => c.iso_2?.toLowerCase() === "in")
+      region.countries?.some((c) => c?.iso_2?.toLowerCase() === "in")
   )
 
   if (!indiaRegion) {
@@ -146,7 +153,7 @@ export default async function setupIndiaShipping({ container }: ExecArgs) {
   }
 
   const existingOptions = await fulfillmentModule.listShippingOptions({
-    service_zone_id: serviceZoneId,
+    service_zone: { id: serviceZoneId },
   })
 
   if (existingOptions.length > 0) {
@@ -157,23 +164,26 @@ export default async function setupIndiaShipping({ container }: ExecArgs) {
       Number(process.env.SHIPPING_EXPRESS_INR ?? "149")
     )
 
-    for (const option of existingOptions) {
-      const target =
-        option.name?.toLowerCase().includes("express") ? expressInr : standardInr
-      const currentAmount = option.prices?.[0]?.amount
+    await updateShippingOptionsWorkflow(container).run({
+      input: existingOptions.map((option) => {
+        const target = option.name?.toLowerCase().includes("express")
+          ? expressInr
+          : standardInr
 
-      if (currentAmount !== target) {
-        await fulfillmentModule.updateShippingOptions({
+        return {
           id: option.id,
-          prices: option.prices?.map((price) => ({
-            ...price,
-            amount: target,
-          })),
-        })
-        logger.info(`Updated "${option.name}" to ₹${target}`)
-      }
-    }
+          price_type: "flat" as const,
+          prices: [
+            { currency_code: "inr", amount: target },
+            { region_id: indiaRegion.id, amount: target },
+          ],
+        }
+      }),
+    })
 
+    logger.info(
+      `Updated India shipping prices (Standard ₹${standardInr}, Express ₹${expressInr})`
+    )
     logger.info(
       `India shipping already configured (${existingOptions.length} option(s): ${existingOptions.map((o) => o.name).join(", ")})`
     )
