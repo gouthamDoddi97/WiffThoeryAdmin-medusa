@@ -1,7 +1,7 @@
 import { uploadFilesWorkflow } from "@medusajs/core-flows"
 import type { MedusaContainer } from "@medusajs/framework/types"
 import { findPerenualSpeciesWithImage } from "../perenual/client"
-import { optimizeImageForUpload } from "../../utils/optimize-image"
+import { optimizeImageForUpload, NOTE_IMAGE_OPTIONS } from "../../utils/optimize-image"
 import { slugifyNoteName } from "../fragrance-notes/utils"
 
 export async function downloadOptimizeAndUploadNoteImage(
@@ -19,7 +19,7 @@ export async function downloadOptimizeAndUploadNoteImage(
     buffer,
     `${slugifyNoteName(noteName)}.jpg`,
     "image/jpeg",
-    { maxWidth: 320, maxHeight: 320, quality: 82 }
+    NOTE_IMAGE_OPTIONS
   )
 
   const { result } = await uploadFilesWorkflow(container).run({

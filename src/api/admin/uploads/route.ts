@@ -5,7 +5,7 @@ import {
 } from "@medusajs/framework/http"
 import { MedusaError } from "@medusajs/framework/utils"
 import type { HttpTypes } from "@medusajs/framework/types"
-import { optimizeImageForUpload } from "../../../utils/optimize-image"
+import { optimizeImageForUpload, ADMIN_UPLOAD_IMAGE_OPTIONS } from "../../../utils/optimize-image"
 
 export async function POST(
   req: AuthenticatedMedusaRequest<HttpTypes.AdminUploadFile>,
@@ -25,7 +25,8 @@ export async function POST(
       const optimized = await optimizeImageForUpload(
         file.buffer,
         file.originalname,
-        file.mimetype
+        file.mimetype,
+        ADMIN_UPLOAD_IMAGE_OPTIONS
       )
 
       return {

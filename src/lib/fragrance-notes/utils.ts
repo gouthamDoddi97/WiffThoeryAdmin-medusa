@@ -16,7 +16,8 @@ export function parseNoteList(value?: string | null): string[] {
   if (!value) return []
   return value
     .split(/[,·]/)
-    .map((n) => n.trim())
+    .flatMap((part) => part.split(/\band\b/i))
+    .map((n) => n.trim().replace(/[.!?]+$/, "").trim())
     .filter(Boolean)
 }
 
