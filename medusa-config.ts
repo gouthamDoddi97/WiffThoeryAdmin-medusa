@@ -1,7 +1,10 @@
+import path from "path"
 import { loadEnv, defineConfig } from '@medusajs/framework/utils'
 import { getRazorpayOptions, isRazorpayConfigured } from './src/lib/integrations/config'
 
 loadEnv(process.env.NODE_ENV || 'development', process.cwd())
+
+const fileUploadOverride = path.resolve(__dirname, "src/admin/components/file-upload/index.ts")
 
 const paymentProviders: Array<{
   resolve: string
@@ -18,6 +21,25 @@ if (isRazorpayConfigured()) {
 }
 
 module.exports = defineConfig({
+  admin: {
+    vite: (config) => ({
+      ...config,
+      plugins: [
+        ...(config.plugins ?? []),
+        {
+          name: "whiff-file-upload-override",
+          resolveId(source) {
+            if (
+              source.endsWith("components/common/file-upload") ||
+              source.endsWith("components/common/file-upload/file-upload")
+            ) {
+              return fileUploadOverride
+            }
+          },
+        },
+      ],
+    }),
+  },
   projectConfig: {
     databaseUrl: process.env.DATABASE_URL,
     http: {
