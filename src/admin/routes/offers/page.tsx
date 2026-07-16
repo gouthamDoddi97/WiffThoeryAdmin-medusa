@@ -1,5 +1,3 @@
-"use client"
-
 import { defineRouteConfig } from "@medusajs/admin-sdk"
 import { Sparkles } from "@medusajs/icons"
 import { Button, Heading, Input, Label, Switch, Textarea, toast } from "@medusajs/ui"

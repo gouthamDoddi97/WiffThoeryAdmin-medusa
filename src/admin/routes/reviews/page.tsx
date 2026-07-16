@@ -1,5 +1,3 @@
-"use client"
-
 import { defineRouteConfig } from "@medusajs/admin-sdk"
 import { StarSolid } from "@medusajs/icons"
 import { Button, Heading, toast } from "@medusajs/ui"

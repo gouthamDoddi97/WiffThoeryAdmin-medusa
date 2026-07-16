@@ -1,5 +1,3 @@
-"use client"
-
 import { defineRouteConfig } from "@medusajs/admin-sdk"
 import { Photo } from "@medusajs/icons"
 import { Button, Heading, Input, Label, toast } from "@medusajs/ui"
