@@ -22,6 +22,8 @@ export type Expense = {
   plan_line_item_id?: string | null
   recorded_by: string
   notes?: string | null
+  receipt_url?: string | null
+  gst_amount?: number | null
 }
 
 export type MonthlyBudget = {

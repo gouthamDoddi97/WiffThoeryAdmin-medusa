@@ -2,9 +2,11 @@ import { defineRouteConfig } from "@medusajs/admin-sdk"
 import { CurrencyDollar } from "@medusajs/icons"
 import { Button, Heading, Input, Label, toast } from "@medusajs/ui"
 import { useCallback, useEffect, useMemo, useState } from "react"
+import { AttachmentField } from "./attachment-field"
 import { BudgetDashboardView } from "./dashboard"
 import { PlansTab } from "./plans-tab"
 import { TasksTab } from "./tasks-tab"
+import { uploadBudgetAttachment } from "./upload"
 import {
   BudgetDashboardData,
   BudgetTab,
@@ -250,6 +252,7 @@ function ExpensesTab({
   const [form, setForm] = useState({
     description: "",
     amount: "",
+    gst_amount: "",
     category_id: data.categories[0]?.id ?? "",
     vendor: "",
     payment_method: "upi",
@@ -259,7 +262,22 @@ function ExpensesTab({
     plan_line_item_id: "",
     expense_date: new Date().toISOString().slice(0, 10),
     notes: "",
+    receipt_url: "",
   })
+  const [uploadingReceipt, setUploadingReceipt] = useState(false)
+
+  const uploadReceipt = async (file: File) => {
+    setUploadingReceipt(true)
+    try {
+      const url = await uploadBudgetAttachment(file)
+      setForm((f) => ({ ...f, receipt_url: url }))
+      toast.success("Invoice attached")
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Upload failed")
+    } finally {
+      setUploadingReceipt(false)
+    }
+  }
 
   const activePlans = data.plans.filter((p) => p.status === "active")
   const selectedPlan = activePlans.find((p) => p.id === form.plan_id)
@@ -279,6 +297,15 @@ function ExpensesTab({
       toast.error("Enter a valid amount")
       return
     }
+    const gst = Number(form.gst_amount || 0)
+    if (!Number.isFinite(gst) || gst < 0) {
+      toast.error("GST must be a non-negative number")
+      return
+    }
+    if (gst > Number(form.amount)) {
+      toast.error("GST cannot exceed the expense amount")
+      return
+    }
     setSaving(true)
     try {
       await api("/admin/budget/expenses", {
@@ -287,15 +314,25 @@ function ExpensesTab({
         body: JSON.stringify({
           ...form,
           amount: Number(form.amount),
+          gst_amount: gst,
           funding_source_id: form.funding_source_id || undefined,
           business_event_id: form.business_event_id || undefined,
           plan_id: form.plan_id || undefined,
           plan_line_item_id: form.plan_line_item_id || undefined,
+          receipt_url: form.receipt_url || undefined,
           recorded_by: currentUser,
         }),
       })
       toast.success("Expense recorded")
-      setForm((f) => ({ ...f, description: "", amount: "", vendor: "", notes: "" }))
+      setForm((f) => ({
+        ...f,
+        description: "",
+        amount: "",
+        gst_amount: "",
+        vendor: "",
+        notes: "",
+        receipt_url: "",
+      }))
       await onRefresh()
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed")
@@ -332,9 +369,23 @@ function ExpensesTab({
           <Label>Description</Label>
           <Input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
         </div>
-        <div className="flex flex-col gap-1">
-          <Label>Amount ({currency.toUpperCase()})</Label>
-          <Input type="number" min={0} step="0.01" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} />
+        <div className="grid grid-cols-2 gap-3">
+          <div className="flex flex-col gap-1">
+            <Label>Amount ({currency.toUpperCase()})</Label>
+            <Input type="number" min={0} step="0.01" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} />
+          </div>
+          <div className="flex flex-col gap-1">
+            <Label>GST included (₹)</Label>
+            <Input
+              type="number"
+              min={0}
+              step="0.01"
+              placeholder="0"
+              value={form.gst_amount}
+              onChange={(e) => setForm({ ...form, gst_amount: e.target.value })}
+            />
+            <p className="text-xs text-ui-fg-subtle">GST portion of the amount — counts toward claimable tax</p>
+          </div>
         </div>
         <div className="flex flex-col gap-1">
           <Label>Category</Label>
@@ -405,8 +456,18 @@ function ExpensesTab({
           <Label>Vendor</Label>
           <Input value={form.vendor} onChange={(e) => setForm({ ...form, vendor: e.target.value })} />
         </div>
+        <div className="md:col-span-2">
+          <AttachmentField
+            label="Invoice / receipt"
+            hint="Attach the GST invoice or payment receipt for this expense."
+            url={form.receipt_url || null}
+            uploading={uploadingReceipt}
+            onUpload={(file) => void uploadReceipt(file)}
+            onClear={() => setForm({ ...form, receipt_url: "" })}
+          />
+        </div>
         <div className="md:col-span-2 flex justify-end">
-          <Button type="submit" isLoading={saving}>Add expense</Button>
+          <Button type="submit" isLoading={saving || uploadingReceipt}>Add expense</Button>
         </div>
       </form>
 
@@ -420,6 +481,8 @@ function ExpensesTab({
               <th className="px-4 py-3">Paid from</th>
               <th className="px-4 py-3">Plan</th>
               <th className="px-4 py-3">By</th>
+              <th className="px-4 py-3">Invoice</th>
+              <th className="px-4 py-3 text-right">GST</th>
               <th className="px-4 py-3 text-right">Amount</th>
               <th className="px-4 py-3"></th>
             </tr>
@@ -433,6 +496,25 @@ function ExpensesTab({
                 <td className="px-4 py-3 text-ui-fg-subtle">{fundingLabel(expense.funding_source_id)}</td>
                 <td className="px-4 py-3 text-ui-fg-subtle">{planLabel(expense.plan_id)}</td>
                 <td className="px-4 py-3 text-ui-fg-subtle">{expense.recorded_by}</td>
+                <td className="px-4 py-3">
+                  {expense.receipt_url ? (
+                    <a
+                      href={expense.receipt_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-ui-fg-interactive hover:underline"
+                    >
+                      View
+                    </a>
+                  ) : (
+                    <span className="text-ui-fg-muted">—</span>
+                  )}
+                </td>
+                <td className="px-4 py-3 text-right text-ui-fg-subtle">
+                  {Number(expense.gst_amount ?? 0) > 0
+                    ? fmt(Number(expense.gst_amount), currency)
+                    : "—"}
+                </td>
                 <td className="px-4 py-3 text-right font-medium">{fmt(Number(expense.amount), currency)}</td>
                 <td className="px-4 py-3">
                   <Button size="small" variant="danger" disabled={saving} onClick={() => remove(expense)}>Delete</Button>

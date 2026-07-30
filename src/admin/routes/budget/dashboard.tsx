@@ -198,8 +198,8 @@ export function BudgetDashboardView({ stats }: { stats: BudgetStats }) {
           value={fmt(stats.total_claimable_tax, currency)}
           hint={
             hasClaimableTax
-              ? `${stats.claimable_tax_breakdown.length} completed plan(s) · click for breakdown`
-              : "GST on completed purchase plans"
+              ? `${stats.claimable_tax_breakdown.length} source(s) · click for breakdown`
+              : "GST on completed plans + expenses"
           }
           onClick={hasClaimableTax ? toggleClaimableTax : undefined}
           active={showClaimableTax}
@@ -364,7 +364,7 @@ export function BudgetDashboardView({ stats }: { stats: BudgetStats }) {
       {showClaimableTax && hasClaimableTax && (
         <Panel
           title="Claimable tax breakdown"
-          subtitle="Input GST recorded on completed purchase plans (invoiced purchases)"
+          subtitle="Input GST from completed purchase plans and GST recorded on ad-hoc expenses"
         >
           <div className="flex flex-col gap-3">
             <div className="border border-ui-border-base rounded-lg p-3 bg-ui-bg-subtle">

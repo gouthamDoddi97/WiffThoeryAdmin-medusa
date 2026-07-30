@@ -16,8 +16,17 @@ export const MATERIAL_CATEGORIES = [
   { name: "Boxes", slug: "boxes", sort_order: 4 },
 ]
 
+export const SAMPLES_CATEGORY = {
+  name: "Samples & R&D",
+  slug: "samples",
+  sort_order: 5,
+  description:
+    "Sample vials, tester bottles, trial oils — spend not tied to a catalog perfume",
+}
+
 export const DEFAULT_EXPENSE_CATEGORIES = [
   ...MATERIAL_CATEGORIES,
+  SAMPLES_CATEGORY,
   { name: "Product / COGS (other)", slug: "product-cogs", sort_order: 5 },
   { name: "Inventory & batches", slug: "inventory", sort_order: 6 },
   { name: "Marketing", slug: "marketing", sort_order: 7 },
@@ -705,6 +714,9 @@ export async function createExpensesFromCompletedPlan(
           recorded_by: options.actor,
           notes: "Auto-recorded when plan was marked complete",
           receipt_url: receiptUrl,
+          // Line tax is GST — recorded on the expense too, but claimable tax
+          // counts plan-linked GST via plan lines to avoid double counting.
+          gst_amount: Number(item.tax ?? 0),
         }
       }
     )
@@ -1095,30 +1107,16 @@ export function buildTaskChangeSummary(
   return lines
 }
 
+/**
+ * Plan line items are intentionally unrestricted: catalog product links are
+ * optional for every category (samples, trial oils, bottles, marketing, etc.
+ * can be free-text lines). Kept as a hook for future validation.
+ */
 export async function validatePlanLineItems(
-  req: MedusaRequest,
-  lineItems?: PlanLineItemInput[]
+  _req: MedusaRequest,
+  _lineItems?: PlanLineItemInput[]
 ) {
-  if (!lineItems?.length) return
-
-  const service = getBudgetService(req)
-  const categories = await service.listExpenseCategories({}, { take: 100 })
-  const oilCategoryId = categories.find(
-    (c: { slug: string }) => c.slug === "fragrance-oil"
-  )?.id as string | undefined
-
-  if (!oilCategoryId) return
-
-  for (const item of lineItems) {
-    if (item.category_id !== oilCategoryId || !item.label?.trim()) continue
-    if (item.id) continue
-    if (!item.product_id?.trim()) {
-      throw new MedusaError(
-        MedusaError.Types.INVALID_DATA,
-        `New fragrance oil line "${item.label.trim()}" requires a catalog product — create the product first`
-      )
-    }
-  }
+  return
 }
 
 export async function replacePlanLineItems(
@@ -1378,7 +1376,9 @@ async function ensureMaterialCategories(req: MedusaRequest) {
   const service = getBudgetService(req)
   const existing = await service.listExpenseCategories({}, { take: 100 })
   const slugs = new Set(existing.map((c: { slug: string }) => c.slug))
-  const toCreate = MATERIAL_CATEGORIES.filter((cat) => !slugs.has(cat.slug))
+  const toCreate = [...MATERIAL_CATEGORIES, SAMPLES_CATEGORY].filter(
+    (cat) => !slugs.has(cat.slug)
+  )
 
   if (toCreate.length) {
     await service.createExpenseCategories(
@@ -2067,6 +2067,25 @@ export async function getBudgetDashboard(req: MedusaRequest) {
     }))
     .filter((row: { tax_total: number }) => row.tax_total > 0)
     .sort((a: { tax_total: number }, b: { tax_total: number }) => b.tax_total - a.tax_total)
+
+  // GST recorded directly on ad-hoc expenses. Expenses auto-created from plan
+  // lines carry plan_line_item_id and are excluded — their GST is already
+  // counted above via the plan line tax.
+  const adhocExpenseGst = Math.round(
+    expenses.reduce(
+      (sum: number, expense: { plan_line_item_id?: string | null; gst_amount?: number | null }) =>
+        expense.plan_line_item_id ? sum : sum + Number(expense.gst_amount ?? 0),
+      0
+    ) * 100
+  ) / 100
+
+  if (adhocExpenseGst > 0) {
+    claimable_tax_breakdown.push({
+      plan_id: "adhoc-expenses",
+      plan_title: "Ad-hoc expenses (GST on expenses)",
+      tax_total: adhocExpenseGst,
+    })
+  }
 
   const total_claimable_tax = claimable_tax_breakdown.reduce(
     (sum: number, row: { tax_total: number }) => sum + row.tax_total,

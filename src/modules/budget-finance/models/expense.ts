@@ -16,6 +16,8 @@ const Expense = model.define("budget_expense", {
   recorded_by: model.text(),
   notes: model.text().nullable(),
   receipt_url: model.text().nullable(),
+  /** GST portion included in `amount` — claimable input tax. */
+  gst_amount: model.number().default(0),
 })
 
 export default Expense

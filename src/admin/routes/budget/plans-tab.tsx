@@ -69,30 +69,6 @@ function isFragranceOilCategory(categories: ExpenseCategory[], categoryId: strin
   return categorySlug(categories, categoryId) === "fragrance-oil"
 }
 
-function validateFragranceOilProductSelection(
-  categories: ExpenseCategory[],
-  lines: Array<{ id?: string; label: string; category_id: string; product_id: string }>
-): string | null {
-  for (const line of lines) {
-    if (!line.label.trim()) continue
-    if (
-      isFragranceOilCategory(categories, line.category_id) &&
-      !line.id &&
-      !line.product_id.trim()
-    ) {
-      return `New fragrance oil lines require a catalog product — create the product first, then select it here.`
-    }
-  }
-  return null
-}
-
-function isLegacyOilLine(
-  categories: ExpenseCategory[],
-  line: { id?: string; category_id: string; product_id: string }
-) {
-  return Boolean(line.id) && isFragranceOilCategory(categories, line.category_id) && !line.product_id.trim()
-}
-
 const FRAGRANCE_TAGGING_CATEGORY_SLUGS = new Set([
   "fragrance-oil",
   "bottles-atomizers",
@@ -252,11 +228,6 @@ function PlanDetail({
     }
     if (!editTitle.trim() || !editLines.some((l) => l.label.trim())) {
       toast.error("Title and at least one line item are required")
-      return
-    }
-    const oilError = validateFragranceOilProductSelection(categories, editLines)
-    if (oilError) {
-      toast.error(oilError)
       return
     }
     setSaving(true)
@@ -738,7 +709,6 @@ function LineItemRow({
   const isOil = categorySlug(categories, line.category_id) === "fragrance-oil"
   const oilCategory = categories.find((c) => c.slug === "fragrance-oil")
   const showFragranceTagging = categoryShowsFragranceTagging(categories, line.category_id)
-  const legacyOil = isLegacyOilLine(categories, line)
 
   return (
     <div className="border border-ui-border-base rounded-lg p-3 bg-ui-bg-subtle flex flex-col gap-3">
@@ -827,19 +797,12 @@ function LineItemRow({
 
       {isOil && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-          {legacyOil && (
-            <p className="text-xs text-amber-700 dark:text-amber-300 md:col-span-2">
-              Legacy oil line — not linked to a catalog product yet. You can save as-is, or select a product below when ready.
-            </p>
-          )}
           <div className="flex flex-col gap-1 md:col-span-2">
             <Label className="text-xs">
-              Perfume / product {!legacyOil ? <span className="text-red-500">*</span> : "(optional — link when ready)"}
+              Perfume / product (optional — link for per-perfume cost tracking)
             </Label>
             <select
-              className={`border rounded-md px-2 py-1.5 text-sm bg-ui-bg-base ${
-                line.product_id || legacyOil ? "border-ui-border-base" : "border-red-400"
-              }`}
+              className="border border-ui-border-base rounded-md px-2 py-1.5 text-sm bg-ui-bg-base"
               value={line.product_id}
               onChange={(e) =>
                 onChange(index, {
@@ -850,28 +813,26 @@ function LineItemRow({
                 })
               }
             >
-              <option value="">{legacyOil ? "Not linked yet" : "Select product…"}</option>
+              <option value="">Not linked — sample / trial / not in catalog</option>
               {products.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.title}
                 </option>
               ))}
             </select>
-            {!legacyOil && (
-              <p className="text-xs text-ui-fg-subtle">
-                Not listed?{" "}
-                <a href="/app/products" className="underline text-ui-fg-interactive" target="_blank" rel="noreferrer">
-                  Create the product in Catalog
-                </a>{" "}
-                first, then refresh this page.
-              </p>
-            )}
+            <p className="text-xs text-ui-fg-subtle">
+              Samples and trial oils can stay unlinked. For catalog perfumes,{" "}
+              <a href="/app/products" className="underline text-ui-fg-interactive" target="_blank" rel="noreferrer">
+                create the product
+              </a>{" "}
+              and link it so spend rolls into that perfume&apos;s costs.
+            </p>
           </div>
           {!line.product_id && (
             <div className="flex flex-col gap-1 md:col-span-2">
-              <Label className="text-xs">Fragrance name (legacy / until product exists)</Label>
+              <Label className="text-xs">Fragrance / sample name (optional)</Label>
               <Input
-                placeholder="e.g. Oud Maracuja"
+                placeholder="e.g. Oud Maracuja trial"
                 value={line.planned_fragrance_name}
                 onChange={(e) => onChange(index, { ...line, planned_fragrance_name: e.target.value })}
               />
@@ -950,9 +911,7 @@ function LineItemRow({
             <>
               {line.product_id
                 ? "Tagged to catalog product"
-                : legacyOil
-                  ? "Legacy line — not linked to catalog yet"
-                  : "Select a catalog product (required)"}
+                : "Not linked — sample / trial oil"}
               {" · "}
             </>
           ) : showFragranceTagging ? (
@@ -1032,11 +991,6 @@ export function PlansTab({
       toast.error("Title and at least one line item are required")
       return
     }
-    const oilError = validateFragranceOilProductSelection(sortedCategories, lines)
-    if (oilError) {
-      toast.error(oilError)
-      return
-    }
     setSaving(true)
     try {
       await api("/admin/budget/plans", {
@@ -1072,13 +1026,11 @@ export function PlansTab({
       <form noValidate onSubmit={saveDraft} className="border border-ui-border-base rounded-xl p-4 bg-ui-bg-base flex flex-col gap-4">
         <Heading level="h2">New purchase plan</Heading>
         <p className="text-sm text-ui-fg-subtle">
-          For packaging (bottles, atomizers, labels, boxes), optionally tag each line to a product — leave empty for shared stock.
-          <strong> Fragrance oil</strong> must be linked to a catalog product —{" "}
-          <a href="/app/products" className="underline text-ui-fg-interactive" target="_blank" rel="noreferrer">
-            create the product first
-          </a>
-          {" "}if it is not listed yet. Enter quantity in <strong>kg</strong> (1 = 1 kg) and unit price as <strong>₹ per kg</strong>.
-          Add <strong>shipping ₹</strong> and <strong>tax ₹</strong> per line when charged separately.
+          Line items can be anything — catalog perfumes, sample or trial oils, bottles, marketing spend, ops, etc.
+          Linking a line to a catalog product is <strong>optional</strong>; do it when you want the spend to roll
+          into that perfume&apos;s costs. For fragrance oil, enter quantity in <strong>kg</strong> (1 = 1 kg) and
+          unit price as <strong>₹ per kg</strong>. Add <strong>shipping ₹</strong> and <strong>tax ₹</strong> per
+          line when charged separately.
         </p>
         <div className="grid md:grid-cols-2 gap-4">
           <div className="flex flex-col gap-1">

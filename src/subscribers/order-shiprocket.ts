@@ -1,7 +1,12 @@
 import { IOrderModuleService } from "@medusajs/framework/types"
 import { Modules } from "@medusajs/framework/utils"
 import type { SubscriberArgs, SubscriberConfig } from "@medusajs/framework"
-import { createShiprocketOrder } from "../lib/shiprocket/client"
+import {
+  assignShiprocketAwb,
+  checkShiprocketServiceability,
+  createShiprocketOrder,
+  pickCourierForMethod,
+} from "../lib/shiprocket/client"
 
 export default async function orderShiprocketHandler({
   event: { data },
@@ -12,7 +17,7 @@ export default async function orderShiprocketHandler({
   let order: Awaited<ReturnType<typeof orderService.retrieveOrder>>
   try {
     order = await orderService.retrieveOrder(data.id, {
-      relations: ["items", "shipping_address"],
+      relations: ["items", "shipping_address", "shipping_methods"],
     })
   } catch (e) {
     console.error("[order-shiprocket] Failed to retrieve order", e)
@@ -49,6 +54,9 @@ export default async function orderShiprocketHandler({
       return sum + unit * (line.quantity ?? 1)
     }, 0) ?? 0
 
+  const shippingMethodName = order.shipping_methods?.[0]?.name ?? undefined
+  const isExpress = /express/i.test(shippingMethodName ?? "")
+
   try {
     const result = await createShiprocketOrder({
       medusaOrderId: order.id,
@@ -71,11 +79,48 @@ export default async function orderShiprocketHandler({
           title: line.title ?? line.product_title ?? "Fragrance",
           sku: line.variant_sku ?? undefined,
           quantity: line.quantity ?? 1,
-          unitPrice: Math.round(Number(line.unit_price ?? 0) / 100),
+          // Medusa v2 stores INR amounts in rupees (major units) — send as-is
+          unitPrice: Math.round(Number(line.unit_price ?? 0)),
         })) ?? [],
-      subtotal: Math.round(subtotal / 100),
+      subtotal: Math.round(subtotal),
       paymentMethod: "Prepaid",
+      shippingMethod: shippingMethodName,
     })
+
+    // Optionally book the courier immediately, matching the customer's choice:
+    // express → fastest ETA, standard → cheapest. Off by default because
+    // assigning an AWB on a live account charges the Shiprocket wallet.
+    if (
+      !result.demo &&
+      result.shipment_id &&
+      process.env.SHIPROCKET_AUTO_ASSIGN_AWB === "true"
+    ) {
+      try {
+        const couriers = await checkShiprocketServiceability(
+          shipping.postal_code
+        )
+        const courier = pickCourierForMethod(
+          couriers,
+          isExpress ? "express" : "standard"
+        )
+        if (courier) {
+          const assigned = await assignShiprocketAwb(
+            result.shipment_id,
+            courier.courier_company_id
+          )
+          result.awb = assigned.awb ?? result.awb
+          result.courier = assigned.courier ?? courier.courier_name
+          console.info(
+            `[order-shiprocket] AWB assigned via ${result.courier}: ${result.awb}`
+          )
+        }
+      } catch (e) {
+        console.warn(
+          "[order-shiprocket] Courier auto-assign failed — assign manually in the Shiprocket dashboard",
+          e
+        )
+      }
+    }
 
     await orderService.updateOrders(order.id, {
       metadata: {
@@ -84,7 +129,10 @@ export default async function orderShiprocketHandler({
           demo: result.demo,
           channel_order_id: result.channel_order_id,
           shiprocket_order_id: result.shiprocket_order_id,
+          shipment_id: result.shipment_id,
           awb: result.awb,
+          courier: result.courier,
+          shipping_method: shippingMethodName,
           synced_at: new Date().toISOString(),
           message: result.message,
         },

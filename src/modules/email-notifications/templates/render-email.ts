@@ -1,4 +1,5 @@
 import { orderConfirmedTemplate } from "./order-confirmed"
+import { orderShippedTemplate } from "./order-shipped"
 import { passwordResetTemplate } from "./password-reset"
 import { taskNotificationTemplate } from "./task-notification"
 import { welcomeTemplate } from "./welcome"
@@ -12,6 +13,11 @@ export function renderEmail(
       return {
         subject: "Your Whiff Theory order is confirmed",
         html: orderConfirmedTemplate(data),
+      }
+    case "order-shipped":
+      return {
+        subject: "Your Whiff Theory order is on its way",
+        html: orderShippedTemplate(data),
       }
     case "password-reset":
       return {

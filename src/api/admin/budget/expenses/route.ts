@@ -12,6 +12,16 @@ export async function POST(req: MedusaRequest, res: MedusaResponse): Promise<voi
       return
     }
 
+    const gstAmount = body.gst_amount != null ? Number(body.gst_amount) : 0
+    if (!Number.isFinite(gstAmount) || gstAmount < 0) {
+      res.status(400).json({ message: "gst_amount must be a non-negative number" })
+      return
+    }
+    if (gstAmount > Number(body.amount)) {
+      res.status(400).json({ message: "gst_amount cannot exceed the expense amount" })
+      return
+    }
+
     const [expense] = await service.createExpenses([
       {
         category_id: String(body.category_id),
@@ -28,6 +38,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse): Promise<voi
         recorded_by: String(body.recorded_by),
         notes: body.notes ? String(body.notes) : null,
         receipt_url: body.receipt_url ? String(body.receipt_url) : null,
+        gst_amount: gstAmount,
       },
     ])
 
