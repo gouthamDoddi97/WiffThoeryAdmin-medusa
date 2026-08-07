@@ -9,9 +9,12 @@ import {
 } from "@medusajs/framework/utils"
 
 /**
- * Shiprocket status webhook (configure in Panel → Settings → API → Webhook).
- * Shiprocket POSTs tracking updates here with the token you set in the panel
- * sent as the `x-api-key` header. Must match SHIPROCKET_WEBHOOK_TOKEN.
+ * Carrier tracking webhook (Shiprocket Panel → Settings → API → Webhook).
+ *
+ * URL must NOT contain: shiprocket, kartrocket, sr, or kr (Shiprocket panel rule).
+ * Example: https://your-backend.up.railway.app/hooks/tracking-updates
+ *
+ * Auth: x-api-key header must match SHIPROCKET_WEBHOOK_TOKEN.
  */
 
 type ShiprocketWebhookBody = {
@@ -28,16 +31,14 @@ type ShiprocketWebhookBody = {
   scans?: Array<{ date?: string; activity?: string; location?: string; status?: string }>
 }
 
-/** Statuses that mean the parcel actually left us — triggers the tracking email. */
 const SHIPPED_STATUS_PATTERN = /picked|shipped|in transit|out for delivery|dispatched/i
-
 const HISTORY_LIMIT = 30
 
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
   const expectedToken = process.env.SHIPROCKET_WEBHOOK_TOKEN?.trim()
   if (!expectedToken) {
     console.warn(
-      "[shiprocket-webhook] SHIPROCKET_WEBHOOK_TOKEN not set — rejecting webhook"
+      "[tracking-webhook] SHIPROCKET_WEBHOOK_TOKEN not set — rejecting webhook"
     )
     res.status(503).json({ error: "Webhook not configured" })
     return
@@ -58,11 +59,10 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     body.order_id ?? body.channel_order_id ?? ""
   ).trim()
 
-  // Our channel order ids look like "WT-42" where 42 is the Medusa display id.
   const displayIdMatch = channelOrderId.match(/^WT-(\d+)$/i)
   if (!displayIdMatch) {
     console.warn(
-      `[shiprocket-webhook] Unrecognized order_id "${channelOrderId}" (awb ${awb}, status ${status})`
+      `[tracking-webhook] Unrecognized order_id "${channelOrderId}" (awb ${awb}, status ${status})`
     )
     res.json({ received: true })
     return
@@ -80,7 +80,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
   const order = orders?.[0]
   if (!order) {
     console.warn(
-      `[shiprocket-webhook] No Medusa order for display id ${displayId} (awb ${awb})`
+      `[tracking-webhook] No Medusa order for display id ${displayId} (awb ${awb})`
     )
     res.json({ received: true })
     return
@@ -137,10 +137,10 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
       updatedShiprocket.shipped_email_sent = true
       console.info(
-        `[shiprocket-webhook] Shipped email sent for order ${order.display_id} (${status})`
+        `[tracking-webhook] Shipped email sent for order ${order.display_id} (${status})`
       )
     } catch (e) {
-      console.error("[shiprocket-webhook] Failed to send shipped email", e)
+      console.error("[tracking-webhook] Failed to send shipped email", e)
     }
   }
 
@@ -152,11 +152,11 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       },
     })
   } catch (e) {
-    console.error("[shiprocket-webhook] Failed to update order metadata", e)
+    console.error("[tracking-webhook] Failed to update order metadata", e)
   }
 
   console.info(
-    `[shiprocket-webhook] Order ${order.display_id}: ${status || "status update"} (awb ${awb})`
+    `[tracking-webhook] Order ${order.display_id}: ${status || "status update"} (awb ${awb})`
   )
   res.json({ received: true })
 }

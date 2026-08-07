@@ -55,7 +55,13 @@ export default async function orderShiprocketHandler({
     }, 0) ?? 0
 
   const shippingMethodName = order.shipping_methods?.[0]?.name ?? undefined
-  const isExpress = /express/i.test(shippingMethodName ?? "")
+  const shiprocketSelection = order.metadata?.shiprocket as
+    | {
+        courier_company_id?: number
+        courier_name?: string
+        rate_inr?: number
+      }
+    | undefined
 
   try {
     const result = await createShiprocketOrder({
@@ -87,36 +93,42 @@ export default async function orderShiprocketHandler({
       shippingMethod: shippingMethodName,
     })
 
-    // Optionally book the courier immediately, matching the customer's choice:
-    // express → fastest ETA, standard → cheapest. Off by default because
-    // assigning an AWB on a live account charges the Shiprocket wallet.
-    if (
+    // Book the courier the customer chose at checkout, or auto-pick when enabled.
+    const shouldAssignAwb =
       !result.demo &&
       result.shipment_id &&
-      process.env.SHIPROCKET_AUTO_ASSIGN_AWB === "true"
-    ) {
+      (shiprocketSelection?.courier_company_id ||
+        process.env.SHIPROCKET_AUTO_ASSIGN_AWB === "true")
+
+    if (shouldAssignAwb) {
       try {
-        const couriers = await checkShiprocketServiceability(
-          shipping.postal_code
-        )
-        const courier = pickCourierForMethod(
-          couriers,
-          isExpress ? "express" : "standard"
-        )
-        if (courier) {
-          const assigned = await assignShiprocketAwb(
-            result.shipment_id,
-            courier.courier_company_id
+        let courierId = shiprocketSelection?.courier_company_id
+        let courierName = shiprocketSelection?.courier_name
+
+        if (!courierId) {
+          const couriers = await checkShiprocketServiceability(
+            shipping.postal_code
           )
+          const isExpress = /express/i.test(shippingMethodName ?? "")
+          const picked = pickCourierForMethod(
+            couriers,
+            isExpress ? "express" : "standard"
+          )
+          courierId = picked?.courier_company_id
+          courierName = picked?.courier_name
+        }
+
+        if (courierId) {
+          const assigned = await assignShiprocketAwb(result.shipment_id, courierId)
           result.awb = assigned.awb ?? result.awb
-          result.courier = assigned.courier ?? courier.courier_name
+          result.courier = assigned.courier ?? courierName ?? result.courier
           console.info(
             `[order-shiprocket] AWB assigned via ${result.courier}: ${result.awb}`
           )
         }
       } catch (e) {
         console.warn(
-          "[order-shiprocket] Courier auto-assign failed — assign manually in the Shiprocket dashboard",
+          "[order-shiprocket] Courier assign failed — assign manually in Shiprocket dashboard",
           e
         )
       }
@@ -133,6 +145,9 @@ export default async function orderShiprocketHandler({
           awb: result.awb,
           courier: result.courier,
           shipping_method: shippingMethodName,
+          customer_courier_id: shiprocketSelection?.courier_company_id,
+          customer_courier_name: shiprocketSelection?.courier_name,
+          customer_rate_inr: shiprocketSelection?.rate_inr,
           synced_at: new Date().toISOString(),
           message: result.message,
         },

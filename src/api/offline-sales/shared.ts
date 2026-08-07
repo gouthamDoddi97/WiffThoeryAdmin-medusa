@@ -4,6 +4,11 @@ import { calculateOrderChange } from "@medusajs/order/dist/utils/calculate-order
 import { createOrderWorkflow } from "@medusajs/medusa/core-flows"
 import { decorateCartTotals } from "@medusajs/utils"
 import { BUDGET_FINANCE_MODULE } from "../../modules/budget-finance"
+import {
+  listRetailStoreRecords,
+  listWarehouseStockLocations,
+  resolveRetailStoreForOfflineSale,
+} from "../retail-stores/shared"
 
 export type OfflineSaleItem = {
   product_id?: string
@@ -24,6 +29,7 @@ export type OfflineSaleBody = {
   region_id: string
   currency_code: string
   stock_location_id: string
+  retail_store_id?: string
   items: OfflineSaleItem[]
   original_total: number
   paid_amount: number
@@ -268,22 +274,21 @@ export async function listOfflineSaleSetup(
 ) {
   const query = req.scope.resolve("query") as any
 
-  const [{ data: stock_locations }, { data: regions }, founder_names] =
+  const [regionsResult, founder_names, retail_stores, stock_locations] =
     await Promise.all([
-      query.graph({
-        entity: "stock_location",
-        fields: ["id", "name", "address.city", "address.country_code"],
-      }),
       query.graph({
         entity: "region",
         fields: ["id", "name", "currency_code"],
       }),
       getFounderNames(req),
+      listRetailStoreRecords(req),
+      listWarehouseStockLocations(req),
     ])
 
   return {
     stock_locations: stock_locations ?? [],
-    regions: regions ?? [],
+    retail_stores: (retail_stores ?? []).filter((store: { is_active?: boolean }) => store.is_active !== false),
+    regions: regionsResult?.data ?? [],
     founder_names,
     custom_seller_names: collectCustomSellerNames(sales, founder_names),
   }
@@ -631,7 +636,8 @@ function buildDiscountAdjustments(discountAmount: number) {
 function buildOrderLineItemsForCreate(
   items: OfflineSaleItem[],
   stockLocationId: string,
-  discountApplied: number
+  discountApplied: number,
+  retailStore?: { id: string; name: string; location: string } | null
 ) {
   const discountByVariant = allocateDiscountToItems(items, discountApplied)
 
@@ -646,6 +652,13 @@ function buildOrderLineItemsForCreate(
     metadata: {
       offline_sale: true,
       stock_location_id: stockLocationId,
+      ...(retailStore
+        ? {
+            retail_store_id: retailStore.id,
+            store_name: retailStore.name,
+            store_location: retailStore.location,
+          }
+        : {}),
     },
     adjustments: buildDiscountAdjustments(discountByVariant.get(item.variant_id) ?? 0),
   }))
@@ -802,6 +815,7 @@ export async function processOfflineSale(req: MedusaRequest, body: OfflineSaleBo
     region_id,
     currency_code,
     stock_location_id,
+    retail_store_id,
     items,
     original_total,
     paid_amount,
@@ -812,7 +826,10 @@ export async function processOfflineSale(req: MedusaRequest, body: OfflineSaleBo
     throw new Error("Missing region or currency for offline sale")
   }
 
-  if (!stock_location_id) {
+  const retailStore = await resolveRetailStoreForOfflineSale(req, retail_store_id)
+  const resolvedStockLocationId = retailStore?.stock_location_id ?? stock_location_id?.trim()
+
+  if (!resolvedStockLocationId) {
     throw new Error("Missing stock_location_id for offline sale")
   }
 
@@ -820,11 +837,11 @@ export async function processOfflineSale(req: MedusaRequest, body: OfflineSaleBo
     throw new Error("Offline sale must include at least one item")
   }
 
-  await validateStockLocation(req, stock_location_id)
+  await validateStockLocation(req, resolvedStockLocationId)
   const inventoryAdjustments = await getInventoryAdjustments(
     req,
     items,
-    stock_location_id,
+    resolvedStockLocationId,
     "deduct"
   )
 
@@ -839,7 +856,12 @@ export async function processOfflineSale(req: MedusaRequest, body: OfflineSaleBo
       currency_code,
       status: "completed",
       no_notification: true,
-      items: buildOrderLineItemsForCreate(items, stock_location_id, discount_applied),
+      items: buildOrderLineItemsForCreate(
+        items,
+        resolvedStockLocationId,
+        discount_applied,
+        retailStore
+      ),
       transactions: [
         {
           amount: paid_amount,
@@ -853,11 +875,18 @@ export async function processOfflineSale(req: MedusaRequest, body: OfflineSaleBo
         customer_name: customerName,
         seller_name,
         payment_method,
-        stock_location_id,
+        stock_location_id: resolvedStockLocationId,
         original_total,
         paid_amount,
         discount_applied,
         ...(customerPhone ? { customer_phone: customerPhone } : {}),
+        ...(retailStore
+          ? {
+              retail_store_id: retailStore.id,
+              store_name: retailStore.name,
+              store_location: retailStore.location,
+            }
+          : {}),
       },
     },
   })
@@ -882,12 +911,14 @@ export async function updateOfflineSale(
   }
 
   const oldLocationId = resolveOrderStockLocationId(order)
-  const newLocationId = body.stock_location_id?.trim() || oldLocationId
+  const retailStore = await resolveRetailStoreForOfflineSale(req, body.retail_store_id)
+  const newLocationId =
+    (retailStore?.stock_location_id ?? body.stock_location_id?.trim()) || oldLocationId
 
   if (!newLocationId) {
     throw new MedusaError(
       MedusaError.Types.INVALID_DATA,
-      "Select a warehouse to save this sale"
+      retailStore ? "Retail store is missing a shelf location" : "Select a warehouse to save this sale"
     )
   }
 
@@ -928,6 +959,17 @@ export async function updateOfflineSale(
       paid_amount: body.paid_amount,
       discount_applied: body.discount_applied,
       customer_phone: customerPhone ?? null,
+      ...(retailStore
+        ? {
+            retail_store_id: retailStore.id,
+            store_name: retailStore.name,
+            store_location: retailStore.location,
+          }
+        : {
+            retail_store_id: null,
+            store_name: null,
+            store_location: null,
+          }),
     },
   })
 
@@ -955,6 +997,17 @@ export async function updateOfflineSale(
           ...(existing.metadata ?? {}),
           offline_sale: true,
           stock_location_id: newLocationId,
+          ...(retailStore
+            ? {
+                retail_store_id: retailStore.id,
+                store_name: retailStore.name,
+                store_location: retailStore.location,
+              }
+            : {
+                retail_store_id: null,
+                store_name: null,
+                store_location: null,
+              }),
         },
       })
       continue
@@ -972,6 +1025,13 @@ export async function updateOfflineSale(
         metadata: {
           offline_sale: true,
           stock_location_id: newLocationId,
+          ...(retailStore
+            ? {
+                retail_store_id: retailStore.id,
+                store_name: retailStore.name,
+                store_location: retailStore.location,
+              }
+            : {}),
         },
       },
     ])

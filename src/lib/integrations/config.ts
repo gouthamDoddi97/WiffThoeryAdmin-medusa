@@ -39,6 +39,14 @@ export function isShiprocketDemoMode(): boolean {
   return !isShiprocketConfigured()
 }
 
+/** Live Shiprocket courier list at checkout (requires credentials). */
+export function isShiprocketLiveCheckoutEnabled(): boolean {
+  if (process.env.SHIPROCKET_LIVE_CHECKOUT === "false") {
+    return false
+  }
+  return isShiprocketConfigured()
+}
+
 export function getRazorpayOptions() {
   return {
     key_id:

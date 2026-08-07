@@ -13,6 +13,16 @@ type StockLocation = {
   address?: { city?: string; country_code?: string }
 }
 
+type RetailStore = {
+  id: string
+  name: string
+  location: string
+  stock_location_id: string
+  is_active?: boolean
+}
+
+type SaleSource = "warehouse" | "store"
+
 type Region = {
   id: string
   name: string
@@ -62,6 +72,9 @@ type OfflineSale = {
     seller_name?: string
     payment_method?: string
     stock_location_id?: string
+    retail_store_id?: string
+    store_name?: string
+    store_location?: string
     customer_phone?: string
     original_total?: number
     paid_amount?: number
@@ -230,6 +243,14 @@ function resolveLineItemPrice(
   return variantUnitPrice(match.variant, currencyCode)
 }
 
+function storeLabel(sale: OfflineSale) {
+  const name = sale.metadata?.store_name
+  const location = sale.metadata?.store_location
+  if (name && location) return `${name} — ${location}`
+  if (name) return name
+  return "—"
+}
+
 function locationLabel(location: StockLocation) {
   const city = location.address?.city
   return city ? `${location.name} (${city})` : location.name
@@ -304,6 +325,9 @@ function SalesTable({
   }
 
   const warehouseLabel = (sale: OfflineSale) => {
+    if (sale.metadata?.retail_store_id || sale.metadata?.store_name) {
+      return "—"
+    }
     const id = resolveSaleStockLocation(sale)
     return id ? locationName(id) : "— (not set)"
   }
@@ -329,6 +353,7 @@ function SalesTable({
               <th className="px-4 py-3 font-medium whitespace-nowrap">Seller</th>
               <th className="px-4 py-3 font-medium whitespace-nowrap">Payment</th>
               <th className="px-4 py-3 font-medium whitespace-nowrap">Warehouse</th>
+              <th className="px-4 py-3 font-medium whitespace-nowrap">Store</th>
               <th className="px-4 py-3 font-medium min-w-[180px]">Items</th>
               <th className="px-4 py-3 font-medium text-right whitespace-nowrap">Paid</th>
               <th className="px-4 py-3 font-medium text-right whitespace-nowrap">Actions</th>
@@ -358,6 +383,9 @@ function SalesTable({
                 </td>
                 <td className="px-4 py-3 text-ui-fg-subtle whitespace-nowrap">
                   {warehouseLabel(sale)}
+                </td>
+                <td className="px-4 py-3 text-ui-fg-subtle whitespace-nowrap">
+                  {storeLabel(sale)}
                 </td>
                 <td className="px-4 py-3 text-ui-fg-subtle text-xs max-w-[240px] truncate">
                   {itemsSummary(sale) || "—"}
@@ -577,6 +605,9 @@ function LineItemPicker({
 
 function SaleForm({
   stockLocations,
+  retailStores,
+  saleSource,
+  retailStoreId,
   regions,
   products,
   stockLocationId,
@@ -591,6 +622,8 @@ function SaleForm({
   paymentMethod,
   discountDisplay,
   items,
+  onSaleSourceChange,
+  onRetailStoreIdChange,
   onStockLocationIdChange,
   onRegionIdChange,
   onCustomerNameChange,
@@ -610,6 +643,9 @@ function SaleForm({
   readOnly = false,
 }: {
   stockLocations: StockLocation[]
+  retailStores: RetailStore[]
+  saleSource: SaleSource
+  retailStoreId: string
   regions: Region[]
   products: AdminProduct[]
   stockLocationId: string
@@ -624,6 +660,8 @@ function SaleForm({
   paymentMethod: string
   discountDisplay: string
   items: SaleLineItem[]
+  onSaleSourceChange: (value: SaleSource) => void
+  onRetailStoreIdChange: (value: string) => void
   onStockLocationIdChange: (value: string) => void
   onRegionIdChange: (value: string) => void
   onCustomerNameChange: (value: string) => void
@@ -645,6 +683,7 @@ function SaleForm({
   const selectedRegion = regions.find((region) => region.id === regionId)
   const currencyCode = selectedRegion?.currency_code ?? "inr"
   const sellerName = resolveSellerName(sellerChoice, sellerCustom)
+  const selectedStore = retailStores.find((store) => store.id === retailStoreId)
   const originalTotal = items.reduce(
     (sum, item) => sum + item.quantity * item.unit_price,
     0
@@ -656,44 +695,112 @@ function SaleForm({
     <form onSubmit={onSubmit} className="flex flex-col gap-5">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="flex flex-col gap-1">
-          <Label htmlFor="warehouse">Warehouse</Label>
+          <Label htmlFor="sale-source">Stock source</Label>
           {readOnly ? (
             <p className="text-sm py-2">
-              {stockLocationId
-                ? locationLabel(
-                    stockLocations.find((l) => l.id === stockLocationId) ?? {
-                      id: stockLocationId,
-                      name: stockLocationId,
-                    }
-                  )
-                : "— (not set)"}
+              {saleSource === "store"
+                ? selectedStore
+                  ? `${selectedStore.name} — ${selectedStore.location}`
+                  : "Retail store"
+                : stockLocationId
+                  ? locationLabel(
+                      stockLocations.find((l) => l.id === stockLocationId) ?? {
+                        id: stockLocationId,
+                        name: stockLocationId,
+                      }
+                    )
+                  : "Warehouse"}
             </p>
           ) : (
+            <select
+              id="sale-source"
+              className="border border-ui-border-base rounded-md px-2 py-1.5 text-sm bg-ui-bg-base text-ui-fg-base disabled:opacity-60"
+              value={saleSource}
+              onChange={(e) => onSaleSourceChange(e.target.value as SaleSource)}
+              disabled={lockWarehouse}
+            >
+              <option value="warehouse">Warehouse (direct)</option>
+              <option value="store">Retail store shelf</option>
+            </select>
+          )}
+        </div>
+
+        <div className="flex flex-col gap-1">
+          {saleSource === "store" ? (
             <>
-              <select
-                id="warehouse"
-                className="border border-ui-border-base rounded-md px-2 py-1.5 text-sm bg-ui-bg-base text-ui-fg-base disabled:opacity-60"
-                value={stockLocationId}
-                onChange={(e) => onStockLocationIdChange(e.target.value)}
-                disabled={lockWarehouse}
-              >
-                <option value="">Select warehouse…</option>
-                {stockLocations.map((location) => (
-                  <option key={location.id} value={location.id}>
-                    {locationLabel(location)}
-                  </option>
-                ))}
-              </select>
-              {!stockLocationId && (
-                <p className="text-xs text-ui-fg-subtle">
-                  This sale has no warehouse on file. Select one before saving.
+              <Label htmlFor="retail-store">Retail store</Label>
+              {readOnly ? (
+                <p className="text-sm py-2">
+                  {selectedStore
+                    ? `${selectedStore.name} — ${selectedStore.location}`
+                    : "—"}
                 </p>
+              ) : (
+                <>
+                  <select
+                    id="retail-store"
+                    className="border border-ui-border-base rounded-md px-2 py-1.5 text-sm bg-ui-bg-base text-ui-fg-base disabled:opacity-60"
+                    value={retailStoreId}
+                    onChange={(e) => onRetailStoreIdChange(e.target.value)}
+                    disabled={lockWarehouse}
+                  >
+                    <option value="">Select store…</option>
+                    {retailStores.map((store) => (
+                      <option key={store.id} value={store.id}>
+                        {store.name} — {store.location}
+                      </option>
+                    ))}
+                  </select>
+                  {!retailStoreId && (
+                    <p className="text-xs text-ui-fg-subtle">
+                      Stock will be deducted from the selected store&apos;s on-shelf inventory.
+                    </p>
+                  )}
+                </>
+              )}
+            </>
+          ) : (
+            <>
+              <Label htmlFor="warehouse">Warehouse</Label>
+              {readOnly ? (
+                <p className="text-sm py-2">
+                  {stockLocationId
+                    ? locationLabel(
+                        stockLocations.find((l) => l.id === stockLocationId) ?? {
+                          id: stockLocationId,
+                          name: stockLocationId,
+                        }
+                      )
+                    : "— (not set)"}
+                </p>
+              ) : (
+                <>
+                  <select
+                    id="warehouse"
+                    className="border border-ui-border-base rounded-md px-2 py-1.5 text-sm bg-ui-bg-base text-ui-fg-base disabled:opacity-60"
+                    value={stockLocationId}
+                    onChange={(e) => onStockLocationIdChange(e.target.value)}
+                    disabled={lockWarehouse}
+                  >
+                    <option value="">Select warehouse…</option>
+                    {stockLocations.map((location) => (
+                      <option key={location.id} value={location.id}>
+                        {locationLabel(location)}
+                      </option>
+                    ))}
+                  </select>
+                  {!stockLocationId && (
+                    <p className="text-xs text-ui-fg-subtle">
+                      This sale has no warehouse on file. Select one before saving.
+                    </p>
+                  )}
+                </>
               )}
             </>
           )}
         </div>
 
-        <div className="flex flex-col gap-1">
+        <div className="flex flex-col gap-1 md:col-span-2">
           <Label htmlFor="region">Region</Label>
           {readOnly ? (
             <p className="text-sm py-2">
@@ -872,6 +979,7 @@ function SaleForm({
 const OfflineSalesPage = () => {
   const [sales, setSales] = useState<OfflineSale[]>([])
   const [stockLocations, setStockLocations] = useState<StockLocation[]>([])
+  const [retailStores, setRetailStores] = useState<RetailStore[]>([])
   const [regions, setRegions] = useState<Region[]>([])
   const [products, setProducts] = useState<AdminProduct[]>([])
   const [loading, setLoading] = useState(true)
@@ -880,6 +988,8 @@ const OfflineSalesPage = () => {
   const [mode, setMode] = useState<PageMode>("list")
 
   const [stockLocationId, setStockLocationId] = useState("")
+  const [saleSource, setSaleSource] = useState<SaleSource>("warehouse")
+  const [retailStoreId, setRetailStoreId] = useState("")
   const [regionId, setRegionId] = useState("")
   const [founderNames, setFounderNames] = useState<string[]>([])
   const [customSellerNames, setCustomSellerNames] = useState<string[]>([])
@@ -917,6 +1027,7 @@ const OfflineSalesPage = () => {
 
     setSales(offlineData.sales ?? [])
     setStockLocations(offlineData.stock_locations ?? [])
+    setRetailStores(offlineData.retail_stores ?? [])
     setRegions(offlineData.regions ?? [])
     setFounderNames(offlineData.founder_names ?? [])
     setCustomSellerNames(offlineData.custom_seller_names ?? [])
@@ -924,6 +1035,7 @@ const OfflineSalesPage = () => {
 
     return offlineData as {
       stock_locations: StockLocation[]
+      retail_stores: RetailStore[]
       regions: Region[]
       founder_names: string[]
       custom_seller_names: string[]
@@ -990,6 +1102,8 @@ const OfflineSalesPage = () => {
     setPaymentMethod("cash")
     setDiscountDisplay("0")
     setItems([])
+    setSaleSource("warehouse")
+    setRetailStoreId("")
     if (stockLocations.length === 1) {
       setStockLocationId(stockLocations[0].id)
     } else {
@@ -1005,10 +1119,22 @@ const OfflineSalesPage = () => {
 
   const populateFormFromSale = (sale: OfflineSale) => {
     let warehouseId = resolveSaleStockLocation(sale)
-    if (!warehouseId && stockLocations.length === 1) {
-      warehouseId = stockLocations[0].id
+    const storeId = String(sale.metadata?.retail_store_id ?? "")
+
+    if (storeId) {
+      setSaleSource("store")
+      setRetailStoreId(storeId)
+      const store = retailStores.find((entry) => entry.id === storeId)
+      setStockLocationId(store?.stock_location_id ?? warehouseId)
+    } else {
+      setSaleSource("warehouse")
+      setRetailStoreId("")
+      if (!warehouseId && stockLocations.length === 1) {
+        warehouseId = stockLocations[0].id
+      }
+      setStockLocationId(warehouseId)
     }
-    setStockLocationId(warehouseId)
+
     setRegionId(sale.region_id ?? "")
     setCustomerName(String(sale.metadata?.customer_name ?? ""))
     setEmail(sale.email ?? "")
@@ -1032,6 +1158,11 @@ const OfflineSalesPage = () => {
     const discountApplied = parseMoneyInput(discountDisplay)
     const paidAmount = Math.max(0, originalTotal - discountApplied)
 
+    const resolvedStockLocationId =
+      saleSource === "store"
+        ? retailStores.find((store) => store.id === retailStoreId)?.stock_location_id ?? ""
+        : stockLocationId
+
     return {
       customer_name: customerName.trim(),
       ...(email.trim() ? { email: email.trim() } : {}),
@@ -1040,7 +1171,10 @@ const OfflineSalesPage = () => {
       payment_method: paymentMethod,
       region_id: regionId,
       currency_code: currencyCode,
-      stock_location_id: stockLocationId,
+      stock_location_id: resolvedStockLocationId,
+      ...(saleSource === "store" && retailStoreId
+        ? { retail_store_id: retailStoreId }
+        : {}),
       items: items.map((item) => ({
         product_id: item.product_id,
         product_title: item.product_title,
@@ -1057,7 +1191,12 @@ const OfflineSalesPage = () => {
   }
 
   const validateForm = () => {
-    if (!stockLocationId) {
+    if (saleSource === "store") {
+      if (!retailStoreId) {
+        toast.error("Select a retail store — stock deducts from that store's shelf")
+        return false
+      }
+    } else if (!stockLocationId) {
       toast.error("Select a warehouse — this sale is missing warehouse data")
       return false
     }
@@ -1084,6 +1223,23 @@ const OfflineSalesPage = () => {
       return false
     }
     return true
+  }
+
+  const handleSaleSourceChange = (value: SaleSource) => {
+    setSaleSource(value)
+    if (value === "warehouse") {
+      setRetailStoreId("")
+    } else {
+      setStockLocationId("")
+    }
+  }
+
+  const handleRetailStoreIdChange = (value: string) => {
+    setRetailStoreId(value)
+    const store = retailStores.find((entry) => entry.id === value)
+    if (store) {
+      setStockLocationId(store.stock_location_id)
+    }
   }
 
   const handleCreate = async (e: React.FormEvent) => {
@@ -1238,6 +1394,9 @@ const OfflineSalesPage = () => {
           {isCreateMode && (
             <SaleForm
               stockLocations={stockLocations}
+              retailStores={retailStores}
+              saleSource={saleSource}
+              retailStoreId={retailStoreId}
               regions={regions}
               products={products}
               stockLocationId={stockLocationId}
@@ -1252,6 +1411,8 @@ const OfflineSalesPage = () => {
               paymentMethod={paymentMethod}
               discountDisplay={discountDisplay}
               items={items}
+              onSaleSourceChange={handleSaleSourceChange}
+              onRetailStoreIdChange={handleRetailStoreIdChange}
               onStockLocationIdChange={setStockLocationId}
               onRegionIdChange={setRegionId}
               onCustomerNameChange={setCustomerName}
@@ -1291,6 +1452,9 @@ const OfflineSalesPage = () => {
               </div>
               <SaleForm
                 stockLocations={stockLocations}
+                retailStores={retailStores}
+                saleSource={saleSource}
+                retailStoreId={retailStoreId}
                 regions={regions}
                 products={products}
                 stockLocationId={stockLocationId}
@@ -1305,6 +1469,8 @@ const OfflineSalesPage = () => {
                 paymentMethod={paymentMethod}
                 discountDisplay={discountDisplay}
                 items={items}
+                onSaleSourceChange={handleSaleSourceChange}
+                onRetailStoreIdChange={handleRetailStoreIdChange}
                 onStockLocationIdChange={setStockLocationId}
                 onRegionIdChange={setRegionId}
                 onCustomerNameChange={setCustomerName}
@@ -1329,6 +1495,9 @@ const OfflineSalesPage = () => {
           {isEditMode && (
             <SaleForm
               stockLocations={stockLocations}
+              retailStores={retailStores}
+              saleSource={saleSource}
+              retailStoreId={retailStoreId}
               regions={regions}
               products={products}
               stockLocationId={stockLocationId}
@@ -1343,6 +1512,8 @@ const OfflineSalesPage = () => {
               paymentMethod={paymentMethod}
               discountDisplay={discountDisplay}
               items={items}
+              onSaleSourceChange={handleSaleSourceChange}
+              onRetailStoreIdChange={handleRetailStoreIdChange}
               onStockLocationIdChange={setStockLocationId}
               onRegionIdChange={setRegionId}
               onCustomerNameChange={setCustomerName}

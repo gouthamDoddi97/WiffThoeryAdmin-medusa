@@ -76,6 +76,9 @@ module.exports = defineConfig({
     {
       resolve: "./src/modules/budget-finance",
     },
+    {
+      resolve: "./src/modules/retail-store",
+    },
     ...(paymentProviders.length
       ? [
           {
