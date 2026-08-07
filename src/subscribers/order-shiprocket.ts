@@ -100,7 +100,8 @@ export default async function orderShiprocketHandler({
       (shiprocketSelection?.courier_company_id ||
         process.env.SHIPROCKET_AUTO_ASSIGN_AWB === "true")
 
-    if (shouldAssignAwb) {
+    if (shouldAssignAwb && result.shipment_id) {
+      const shipmentId = result.shipment_id
       try {
         let courierId = shiprocketSelection?.courier_company_id
         let courierName = shiprocketSelection?.courier_name
@@ -119,7 +120,7 @@ export default async function orderShiprocketHandler({
         }
 
         if (courierId) {
-          const assigned = await assignShiprocketAwb(result.shipment_id, courierId)
+          const assigned = await assignShiprocketAwb(shipmentId, courierId)
           result.awb = assigned.awb ?? result.awb
           result.courier = assigned.courier ?? courierName ?? result.courier
           console.info(

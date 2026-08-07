@@ -68,7 +68,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     return
   }
 
-  const displayId = Number(displayIdMatch[1])
+  const displayId = displayIdMatch[1]
   const query = req.scope.resolve(ContainerRegistrationKeys.QUERY)
 
   const { data: orders } = await query.graph({
