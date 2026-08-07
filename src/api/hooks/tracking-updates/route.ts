@@ -34,19 +34,37 @@ type ShiprocketWebhookBody = {
 const SHIPPED_STATUS_PATTERN = /picked|shipped|in transit|out for delivery|dispatched/i
 const HISTORY_LIMIT = 30
 
-export async function POST(req: MedusaRequest, res: MedusaResponse) {
+function readWebhookToken(req: MedusaRequest): string {
+  return String(req.headers["x-api-key"] ?? "").trim()
+}
+
+function validateWebhookToken(req: MedusaRequest, res: MedusaResponse): boolean {
   const expectedToken = process.env.SHIPROCKET_WEBHOOK_TOKEN?.trim()
   if (!expectedToken) {
     console.warn(
-      "[tracking-webhook] SHIPROCKET_WEBHOOK_TOKEN not set — rejecting webhook"
+      "[tracking-webhook] SHIPROCKET_WEBHOOK_TOKEN not set on server — add it in Railway variables"
     )
     res.status(503).json({ error: "Webhook not configured" })
-    return
+    return false
   }
 
-  const providedToken = String(req.headers["x-api-key"] ?? "")
+  const providedToken = readWebhookToken(req)
   if (providedToken !== expectedToken) {
+    console.warn("[tracking-webhook] Invalid x-api-key token")
     res.status(401).json({ error: "Invalid token" })
+    return false
+  }
+
+  return true
+}
+
+/** Shiprocket "Test Webhook" probes the URL — return 200 without auth for reachability. */
+export async function GET(_req: MedusaRequest, res: MedusaResponse) {
+  res.status(200).json({ ok: true, endpoint: "tracking-updates" })
+}
+
+export async function POST(req: MedusaRequest, res: MedusaResponse) {
+  if (!validateWebhookToken(req, res)) {
     return
   }
 
