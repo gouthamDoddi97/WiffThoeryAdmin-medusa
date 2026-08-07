@@ -5,11 +5,14 @@ WORKDIR /app
 # Copy lockfiles first so this layer is cached unless deps change
 COPY package.json package-lock.json ./
 
-# Install all deps (dev deps needed for the build step)
-RUN npm ci --legacy-peer-deps
+# Skip postinstall during ci — scripts/ is not copied yet (see below)
+RUN npm ci --legacy-peer-deps --ignore-scripts
 
 # Copy the rest of the source
 COPY . .
+
+# Admin upload patch (normally runs via npm postinstall locally)
+RUN node scripts/patch-medusa-dashboard-upload-limit.js
 
 # Build Medusa backend + admin dashboard
 RUN npx medusa build
