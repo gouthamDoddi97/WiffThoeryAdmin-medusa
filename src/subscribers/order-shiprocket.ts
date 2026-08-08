@@ -1,24 +1,107 @@
-import { IOrderModuleService } from "@medusajs/framework/types"
 import { Modules } from "@medusajs/framework/utils"
 import type { SubscriberArgs, SubscriberConfig } from "@medusajs/framework"
+import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import {
   assignShiprocketAwb,
   checkShiprocketServiceability,
   createShiprocketOrder,
   pickCourierForMethod,
 } from "../lib/shiprocket/client"
+import { computeCartWeightKg } from "../lib/shiprocket/cart-weight"
+
+type OrderShiprocketSelection = {
+  courier_company_id?: number
+  courier_name?: string
+  rate_inr?: number
+  weight_kg?: number
+  etd?: string
+  estimated_delivery_days?: number
+  pincode?: string
+}
+
+/** Shape loaded from query.graph / order module for Shiprocket sync. */
+type OrderShiprocketRow = {
+  id: string
+  /** Medusa query returns display_id as string; order module may use number. */
+  display_id?: number | string
+  email?: string | null
+  created_at?: string | Date
+  metadata?: Record<string, unknown> | null
+  shipping_address?: {
+    first_name?: string | null
+    last_name?: string | null
+    address_1?: string | null
+    address_2?: string | null
+    city?: string | null
+    province?: string | null
+    postal_code?: string | null
+    country_code?: string | null
+    phone?: string | null
+  } | null
+  shipping_methods?: Array<{ name?: string | null }> | null
+  items?: Array<{
+    title?: string | null
+    product_title?: string | null
+    variant_sku?: string | null
+    quantity?: number | null
+    unit_price?: number | null
+    variant?: { weight?: number | null } | null
+    product?: { weight?: number | null } | null
+  }> | null
+  customer?: { email?: string | null } | null
+}
 
 export default async function orderShiprocketHandler({
   event: { data },
   container,
 }: SubscriberArgs<{ id: string }>) {
-  const orderService = container.resolve<IOrderModuleService>(Modules.ORDER)
+  const query = container.resolve(ContainerRegistrationKeys.QUERY)
+  const orderService = container.resolve(Modules.ORDER)
 
-  let order: Awaited<ReturnType<typeof orderService.retrieveOrder>>
+  let order: OrderShiprocketRow
+
   try {
-    order = await orderService.retrieveOrder(data.id, {
-      relations: ["items", "shipping_address", "shipping_methods"],
+    const { data: orders } = await query.graph({
+      entity: "order",
+      fields: [
+        "id",
+        "display_id",
+        "email",
+        "created_at",
+        "metadata",
+        "shipping_address.*",
+        "shipping_methods.*",
+        "items.*",
+        "items.variant.weight",
+        "items.product.weight",
+        "customer.*",
+      ],
+      filters: { id: data.id },
     })
+    const row = orders?.[0] as OrderShiprocketRow | undefined
+    if (!row?.id) {
+      throw new Error(`Order ${data.id} not found`)
+    }
+    order = row
+
+    // Query sometimes omits linked address — fall back to order module.
+    if (!order.shipping_address?.address_1) {
+      const viaModule = await orderService.retrieveOrder(data.id, {
+        relations: ["items", "shipping_address", "shipping_methods"],
+      })
+      order = {
+        ...order,
+        email: order.email ?? viaModule.email,
+        display_id: order.display_id ?? viaModule.display_id,
+        shipping_address: viaModule.shipping_address,
+        shipping_methods: viaModule.shipping_methods,
+        items: viaModule.items,
+        metadata: (order.metadata ?? viaModule.metadata) as Record<
+          string,
+          unknown
+        > | null,
+      }
+    }
   } catch (e) {
     console.error("[order-shiprocket] Failed to retrieve order", e)
     return
@@ -32,7 +115,8 @@ export default async function orderShiprocketHandler({
     return
   }
 
-  if (!order.email) {
+  const email = order.email ?? order.customer?.email ?? null
+  if (!email) {
     console.warn(`[order-shiprocket] Order ${data.id} has no email, skipping`)
     return
   }
@@ -48,6 +132,26 @@ export default async function orderShiprocketHandler({
     )
   }
 
+  const existingShiprocket = order.metadata?.shiprocket as
+    | (OrderShiprocketSelection & {
+        shiprocket_order_id?: number
+        synced_at?: string
+        demo?: boolean
+      })
+    | undefined
+
+  // Don't re-create if we already pushed a live Shiprocket order.
+  if (
+    existingShiprocket?.shiprocket_order_id &&
+    existingShiprocket.synced_at &&
+    existingShiprocket.demo === false
+  ) {
+    console.info(
+      `[order-shiprocket] Order ${order.display_id} already synced live — skipping`
+    )
+    return
+  }
+
   const subtotal =
     order.items?.reduce((sum, line) => {
       const unit = Number(line.unit_price ?? 0)
@@ -55,20 +159,20 @@ export default async function orderShiprocketHandler({
     }, 0) ?? 0
 
   const shippingMethodName = order.shipping_methods?.[0]?.name ?? undefined
-  const shiprocketSelection = order.metadata?.shiprocket as
-    | {
-        courier_company_id?: number
-        courier_name?: string
-        rate_inr?: number
-      }
-    | undefined
+  const shiprocketSelection = existingShiprocket
+  const weightKg =
+    Number(shiprocketSelection?.weight_kg) > 0
+      ? Number(shiprocketSelection?.weight_kg)
+      : computeCartWeightKg(order.items)
 
   try {
     const result = await createShiprocketOrder({
       medusaOrderId: order.id,
-      displayId: order.display_id,
-      orderDate: new Date(order.created_at).toISOString().slice(0, 10),
-      email: order.email,
+      displayId: Number(order.display_id ?? 0),
+      orderDate: new Date(order.created_at ?? Date.now())
+        .toISOString()
+        .slice(0, 10),
+      email,
       phone: phone || "0000000000",
       shipping: {
         firstName: shipping.first_name ?? "Customer",
@@ -85,15 +189,14 @@ export default async function orderShiprocketHandler({
           title: line.title ?? line.product_title ?? "Fragrance",
           sku: line.variant_sku ?? undefined,
           quantity: line.quantity ?? 1,
-          // Medusa v2 stores INR amounts in rupees (major units) — send as-is
           unitPrice: Math.round(Number(line.unit_price ?? 0)),
         })) ?? [],
       subtotal: Math.round(subtotal),
       paymentMethod: "Prepaid",
       shippingMethod: shippingMethodName,
+      weightKg,
     })
 
-    // Book the courier the customer chose at checkout, or auto-pick when enabled.
     const shouldAssignAwb =
       !result.demo &&
       result.shipment_id &&
@@ -108,7 +211,8 @@ export default async function orderShiprocketHandler({
 
         if (!courierId) {
           const couriers = await checkShiprocketServiceability(
-            shipping.postal_code
+            shipping.postal_code,
+            weightKg
           )
           const isExpress = /express/i.test(shippingMethodName ?? "")
           const picked = pickCourierForMethod(
@@ -139,6 +243,7 @@ export default async function orderShiprocketHandler({
       metadata: {
         ...(order.metadata ?? {}),
         shiprocket: {
+          ...shiprocketSelection,
           demo: result.demo,
           channel_order_id: result.channel_order_id,
           shiprocket_order_id: result.shiprocket_order_id,
@@ -160,7 +265,25 @@ export default async function orderShiprocketHandler({
       result.awb ?? result.channel_order_id
     )
   } catch (e) {
+    const message = e instanceof Error ? e.message : String(e)
     console.error("[order-shiprocket] Failed to create shipment", e)
+    try {
+      await orderService.updateOrders(order.id, {
+        metadata: {
+          ...(order.metadata ?? {}),
+          shiprocket: {
+            ...shiprocketSelection,
+            sync_error: message,
+            sync_failed_at: new Date().toISOString(),
+          },
+        },
+      })
+    } catch (updateError) {
+      console.error(
+        "[order-shiprocket] Also failed to persist sync_error metadata",
+        updateError
+      )
+    }
   }
 }
 

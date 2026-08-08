@@ -6,6 +6,10 @@ type SelectCourierBody = {
   cart_id?: string
   courier_company_id?: number
   pincode?: string
+  courier_name?: string
+  rate?: number
+  etd?: string
+  estimated_delivery_days?: number
 }
 
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
@@ -30,10 +34,26 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
   }
 
   try {
+    const courierName = String(body.courier_name ?? "").trim()
+    const rate = Number(body.rate)
+
     const result = await selectShiprocketCourierForCart(req.scope, {
       cartId,
       courierCompanyId,
       pincode,
+      ...(courierName && Number.isFinite(rate)
+        ? {
+            courier: {
+              courier_name: courierName,
+              rate,
+              etd: body.etd ? String(body.etd) : undefined,
+              estimated_delivery_days:
+                body.estimated_delivery_days != null
+                  ? Number(body.estimated_delivery_days)
+                  : undefined,
+            },
+          }
+        : {}),
     })
 
     res.json({

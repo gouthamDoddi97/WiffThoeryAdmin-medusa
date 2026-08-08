@@ -239,6 +239,6 @@ export default async function setupIndiaShipping({ container }: ExecArgs) {
   })
 
   logger.info(
-    `India shipping options created (Standard ₹${standardInr / 100}, Express ₹${expressInr / 100}). Restart storefront checkout and select a method.`
+    `India shipping options created (Standard ₹${standardInr}, Express ₹${expressInr}). Restart storefront checkout and select a method.`
   )
 }

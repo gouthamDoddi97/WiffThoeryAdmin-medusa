@@ -4,7 +4,6 @@ import {
 } from "@medusajs/framework/utils"
 import {
   addShippingMethodToCartWorkflow,
-  refreshCartItemsWorkflow,
   updateCartWorkflow,
 } from "@medusajs/medusa/core-flows"
 import { MedusaContainer } from "@medusajs/framework/types"
@@ -12,7 +11,20 @@ import {
   checkShiprocketServiceability,
   ShiprocketCourier,
 } from "./client"
+import {
+  computeCartWeightKg,
+  estimateCartWeightKg,
+  type ShiprocketWeightLine,
+} from "./cart-weight"
+import { shiprocketRateToMedusaShippingAmount } from "../currency/inr-amounts"
 import { isShiprocketConfigured, isShiprocketDemoMode } from "../integrations/config"
+
+export { shiprocketRateToMedusaShippingAmount } from "../currency/inr-amounts"
+export {
+  computeCartWeightKg,
+  estimateCartWeightKg,
+  type ShiprocketWeightLine,
+} from "./cart-weight"
 
 export type ShiprocketCourierOption = ShiprocketCourier & {
   /** Display label for checkout */
@@ -46,27 +58,35 @@ const DEMO_COURIERS: ShiprocketCourierOption[] = [
   },
 ]
 
-export function estimateCartWeightKg(itemCount: number): number {
-  const perItem = Number(process.env.SHIPROCKET_DEFAULT_WEIGHT_KG ?? "0.35")
-  const base = Number(process.env.SHIPROCKET_MIN_WEIGHT_KG ?? "0.2")
-  return Math.max(base, perItem * Math.max(1, itemCount))
+const SERVICEABILITY_CACHE_TTL_MS = 5 * 60 * 1000
+type ServiceabilityCacheEntry = {
+  expiresAt: number
+  couriers: ShiprocketCourierOption[]
+}
+const serviceabilityCache = new Map<string, ServiceabilityCacheEntry>()
+
+function serviceabilityCacheKey(pincode: string, weightKg: number): string {
+  return `${pincode}:${weightKg.toFixed(2)}`
 }
 
-/** Medusa INR shipping amounts use paise (9900 = ₹99) while items use rupees. */
-export function shiprocketRateToMedusaShippingAmount(rateInr: number): number {
-  return Math.round(rateInr * 100)
-}
-
-export function medusaShippingAmountToInr(amount: number, itemTotal: number): number {
-  if (itemTotal > 0 && amount >= itemTotal * 10) {
-    return amount / 100
-  }
-  return amount
+function normalizeCouriers(couriers: ShiprocketCourier[]): ShiprocketCourierOption[] {
+  return couriers
+    .filter((c) => c.courier_name && Number.isFinite(c.rate))
+    .map((c) => ({
+      ...c,
+      label: c.courier_name,
+    }))
+    .sort(
+      (a, b) =>
+        a.rate - b.rate ||
+        (a.estimated_delivery_days ?? 99) - (b.estimated_delivery_days ?? 99)
+    )
 }
 
 export async function listShiprocketCouriersForPincode(
   pincode: string,
-  weightKg?: number
+  weightKg?: number,
+  options?: { skipCache?: boolean }
 ): Promise<ShiprocketCourierOption[]> {
   if (!isShiprocketConfigured()) {
     return []
@@ -76,20 +96,37 @@ export async function listShiprocketCouriersForPincode(
     return DEMO_COURIERS
   }
 
-  const couriers = await checkShiprocketServiceability(pincode, weightKg)
+  const weight = weightKg ?? Number(process.env.SHIPROCKET_DEFAULT_WEIGHT_KG ?? "0.35")
+  const cacheKey = serviceabilityCacheKey(pincode, weight)
+
+  if (!options?.skipCache) {
+    const cached = serviceabilityCache.get(cacheKey)
+    if (cached && Date.now() < cached.expiresAt) {
+      return cached.couriers
+    }
+  }
+
+  const couriers = normalizeCouriers(
+    await checkShiprocketServiceability(pincode, weight)
+  )
+
+  serviceabilityCache.set(cacheKey, {
+    expiresAt: Date.now() + SERVICEABILITY_CACHE_TTL_MS,
+    couriers,
+  })
+
   return couriers
-    .filter((c) => c.courier_name && Number.isFinite(c.rate))
-    .map((c) => ({
-      ...c,
-      label: c.courier_name,
-    }))
-    .sort((a, b) => a.rate - b.rate || (a.estimated_delivery_days ?? 99) - (b.estimated_delivery_days ?? 99))
 }
 
 type SelectCourierInput = {
   cartId: string
   courierCompanyId: number
   pincode: string
+  /** When provided (from checkout list), skip a live Shiprocket re-fetch. */
+  courier?: Pick<
+    ShiprocketCourier,
+    "courier_name" | "rate" | "etd" | "estimated_delivery_days"
+  >
 }
 
 export async function selectShiprocketCourierForCart(
@@ -108,6 +145,10 @@ export async function selectShiprocketCourierForCart(
       "item_total",
       "metadata",
       "*items",
+      "items.quantity",
+      "items.metadata",
+      "items.variant.weight",
+      "items.product.weight",
       "*shipping_methods",
       "*shipping_address",
     ],
@@ -120,7 +161,7 @@ export async function selectShiprocketCourierForCart(
         currency_code?: string
         item_total?: number
         metadata?: Record<string, unknown> | null
-        items?: Array<{ quantity?: number }> | null
+        items?: Array<ShiprocketWeightLine> | null
         shipping_methods?: Array<{ id: string; shipping_option_id?: string }> | null
         shipping_address?: { postal_code?: string | null } | null
       }
@@ -139,14 +180,25 @@ export async function selectShiprocketCourierForCart(
     throw new Error("A valid 6-digit delivery pincode is required")
   }
 
-  const itemCount =
-    cart.items?.reduce((sum, line) => sum + (line.quantity ?? 1), 0) ?? 1
-  const weightKg = estimateCartWeightKg(itemCount)
+  const weightKg = computeCartWeightKg(cart.items)
 
-  const couriers = await listShiprocketCouriersForPincode(pincode, weightKg)
-  const courier = couriers.find(
-    (c) => c.courier_company_id === input.courierCompanyId
-  )
+  let courier: ShiprocketCourierOption | undefined
+
+  if (input.courier?.courier_name && Number.isFinite(input.courier.rate)) {
+    courier = {
+      courier_company_id: input.courierCompanyId,
+      courier_name: input.courier.courier_name,
+      rate: input.courier.rate,
+      etd: input.courier.etd,
+      estimated_delivery_days: input.courier.estimated_delivery_days,
+      label: input.courier.courier_name,
+    }
+  } else {
+    const couriers = await listShiprocketCouriersForPincode(pincode, weightKg)
+    courier = couriers.find(
+      (c) => c.courier_company_id === input.courierCompanyId
+    )
+  }
 
   if (!courier) {
     throw new Error("Selected courier is not available for this pincode")
@@ -166,6 +218,15 @@ export async function selectShiprocketCourierForCart(
     throw new Error("No shipping option configured — run setup-india-shipping.ts")
   }
 
+  const medusaAmount = shiprocketRateToMedusaShippingAmount(courier.rate)
+  const shippingMethodName = `${courier.courier_name} via Shiprocket`
+
+  const existingIds =
+    cart.shipping_methods?.map((m) => m.id).filter(Boolean) ?? []
+  if (existingIds.length) {
+    await cartModule.deleteShippingMethods(existingIds)
+  }
+
   await addShippingMethodToCartWorkflow(container).run({
     input: {
       cart_id: cart.id,
@@ -182,36 +243,34 @@ export async function selectShiprocketCourierForCart(
     },
   })
 
-  const refreshedCart = await cartModule.retrieveCart(cart.id, {
+  let refreshedCart = await cartModule.retrieveCart(cart.id, {
     relations: ["shipping_methods"],
   })
 
-  const shippingMethod = refreshedCart.shipping_methods?.at(-1)
+  let shippingMethod = refreshedCart.shipping_methods?.at(-1)
   if (!shippingMethod?.id) {
     throw new Error("Failed to apply shipping method")
   }
 
-  const medusaAmount = shiprocketRateToMedusaShippingAmount(courier.rate)
-
-  await cartModule.updateShippingMethods([
-    {
-      id: shippingMethod.id,
-      name: `${courier.courier_name} via Shiprocket`,
-      amount: medusaAmount,
-      is_tax_inclusive: true,
-      data: {
-        shiprocket_courier_id: courier.courier_company_id,
-        shiprocket_courier_name: courier.courier_name,
-        shiprocket_rate_inr: courier.rate,
-        shiprocket_etd: courier.etd,
-        shiprocket_estimated_days: courier.estimated_delivery_days,
+  const applyShiprocketRate = async (methodId: string) => {
+    await cartModule.updateShippingMethods([
+      {
+        id: methodId,
+        name: shippingMethodName,
+        amount: medusaAmount,
+        is_tax_inclusive: true,
+        data: {
+          shiprocket_courier_id: courier.courier_company_id,
+          shiprocket_courier_name: courier.courier_name,
+          shiprocket_rate_inr: courier.rate,
+          shiprocket_etd: courier.etd,
+          shiprocket_estimated_days: courier.estimated_delivery_days,
+        },
       },
-    },
-  ])
+    ])
+  }
 
-  await refreshCartItemsWorkflow(container).run({
-    input: { cart_id: cart.id },
-  })
+  await applyShiprocketRate(shippingMethod.id)
 
   await updateCartWorkflow(container).run({
     input: {

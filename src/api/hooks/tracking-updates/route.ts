@@ -7,6 +7,10 @@ import {
   ContainerRegistrationKeys,
   Modules,
 } from "@medusajs/framework/utils"
+import {
+  markOrderDeliveredFromTracking,
+  markOrderShippedFromTracking,
+} from "../../../lib/order/automation"
 
 /**
  * Carrier tracking webhook (Shiprocket Panel → Settings → API → Webhook).
@@ -32,6 +36,7 @@ type ShiprocketWebhookBody = {
 }
 
 const SHIPPED_STATUS_PATTERN = /picked|shipped|in transit|out for delivery|dispatched/i
+const DELIVERED_STATUS_PATTERN = /delivered|rto delivered|delivery completed/i
 const HISTORY_LIMIT = 30
 
 function readWebhookToken(req: MedusaRequest): string {
@@ -171,6 +176,47 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     })
   } catch (e) {
     console.error("[tracking-webhook] Failed to update order metadata", e)
+  }
+
+  const resolvedAwb = String(awb || (existing.awb ?? "")).trim()
+
+  if (
+    process.env.SHIPROCKET_AUTO_MARK_SHIPPED !== "false" &&
+    resolvedAwb &&
+    SHIPPED_STATUS_PATTERN.test(status)
+  ) {
+    try {
+      await markOrderShippedFromTracking(req.scope, order.id, {
+        awb: resolvedAwb,
+        courier: body.courier_name ?? (existing.courier as string | undefined),
+      })
+    } catch (e) {
+      console.error("[tracking-webhook] Failed to mark order shipped in Medusa", e)
+    }
+  }
+
+  if (
+    process.env.SHIPROCKET_AUTO_MARK_DELIVERED !== "false" &&
+    DELIVERED_STATUS_PATTERN.test(status)
+  ) {
+    try {
+      if (
+        process.env.SHIPROCKET_AUTO_MARK_SHIPPED !== "false" &&
+        resolvedAwb &&
+        !existing.medusa_shipment_registered_at
+      ) {
+        await markOrderShippedFromTracking(req.scope, order.id, {
+          awb: resolvedAwb,
+          courier: body.courier_name ?? (existing.courier as string | undefined),
+        })
+      }
+      await markOrderDeliveredFromTracking(req.scope, order.id)
+    } catch (e) {
+      console.error(
+        "[tracking-webhook] Failed to mark order delivered in Medusa",
+        e
+      )
+    }
   }
 
   console.info(

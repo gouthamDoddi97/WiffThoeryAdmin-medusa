@@ -32,6 +32,8 @@ export type ShiprocketOrderInput = {
   paymentMethod: "Prepaid" | "COD"
   /** Medusa shipping option name (e.g. "Express Shipping") — recorded on the Shiprocket order. */
   shippingMethod?: string
+  /** Total cart weight in kg for Shiprocket API. */
+  weightKg?: number
 }
 
 export type ShiprocketCreateResult = {
@@ -280,6 +282,37 @@ export async function assignShiprocketAwb(
   }
 }
 
+/** Returns a PDF URL after AWB is assigned (official courier label from Shiprocket). */
+export async function generateShiprocketLabel(
+  shipmentId: number
+): Promise<{ label_url?: string; message?: string }> {
+  if (isShiprocketDemoMode()) {
+    return {
+      message: "Demo mode — Shiprocket label URL not available",
+    }
+  }
+
+  const res = await shiprocketFetch("/courier/generate/label", {
+    method: "POST",
+    body: JSON.stringify({ shipment_id: [String(shipmentId)] }),
+  })
+
+  const body = await res.text()
+  if (!res.ok) {
+    throw new Error(`Shiprocket generate label failed (${res.status}): ${body}`)
+  }
+
+  const data = JSON.parse(body) as {
+    label_url?: string
+    response?: string
+  }
+
+  return {
+    label_url: data.label_url,
+    message: data.response,
+  }
+}
+
 /** Fabricated timeline for demo-mode AWBs so the tracking page can be tested end to end. */
 function demoTracking(awb: string): ShiprocketTracking {
   const now = Date.now()
@@ -440,7 +473,9 @@ async function getAuthToken(): Promise<string> {
 
 function buildPayload(input: ShiprocketOrderInput) {
   const pickupLocation = process.env.SHIPROCKET_PICKUP_LOCATION ?? "Primary"
-  const weightKg = Number(process.env.SHIPROCKET_DEFAULT_WEIGHT_KG ?? "0.35")
+  const weightKg =
+    input.weightKg ??
+    Number(process.env.SHIPROCKET_DEFAULT_WEIGHT_KG ?? "0.35")
   const length = Number(process.env.SHIPROCKET_DEFAULT_LENGTH_CM ?? "12")
   const breadth = Number(process.env.SHIPROCKET_DEFAULT_BREADTH_CM ?? "12")
   const height = Number(process.env.SHIPROCKET_DEFAULT_HEIGHT_CM ?? "8")

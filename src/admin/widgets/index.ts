@@ -2,3 +2,4 @@ export { default as CollectionBackgroundWidget, config as CollectionBackgroundWi
 export { default as ProductPerfumeDetailsWidget, config as ProductPerfumeDetailsWidgetConfig } from "./product-perfume-details"
 export { default as CategoryTierDetailsWidget, config as CategoryTierDetailsWidgetConfig } from "./category-tier-details"
 export { default as DashboardAlertsWidget, config as DashboardAlertsWidgetConfig } from "./dashboard-alerts"
+export { default as OrderPackingLabelWidget, config as OrderPackingLabelWidgetConfig } from "./order-packing-label"

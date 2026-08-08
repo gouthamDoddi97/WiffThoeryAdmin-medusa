@@ -4,6 +4,7 @@ import {
   filterOfflineStoreProducts,
 } from "./middlewares/filter-offline-store-products"
 import { requireStockLocationAddress } from "./middlewares/validate-stock-location-address"
+import { requirePackingLabelBeforeFulfillment } from "./middlewares/require-packing-label"
 
 const offlineProductMiddlewares = [
   ensureProductMetadataField,
@@ -33,6 +34,11 @@ export default defineMiddlewares({
       methods: ["POST"],
       matcher: "/admin/stock-locations/:id",
       middlewares: [requireStockLocationAddress],
+    },
+    {
+      methods: ["POST"],
+      matcher: "/admin/orders/:id/fulfillments",
+      middlewares: [requirePackingLabelBeforeFulfillment],
     },
   ],
 })
