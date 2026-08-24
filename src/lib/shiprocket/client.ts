@@ -34,6 +34,8 @@ export type ShiprocketOrderInput = {
   shippingMethod?: string
   /** Total cart weight in kg for Shiprocket API. */
   weightKg?: number
+  /** Shiprocket courier rate in INR (shown as shipping_charges on the order). */
+  shippingChargesInr?: number
 }
 
 export type ShiprocketCreateResult = {
@@ -511,7 +513,7 @@ function buildPayload(input: ShiprocketOrderInput) {
       hsn: process.env.SHIPROCKET_DEFAULT_HSN ?? "",
     })),
     payment_method: input.paymentMethod,
-    shipping_charges: 0,
+    shipping_charges: input.shippingChargesInr ?? 0,
     giftwrap_charges: 0,
     transaction_charges: 0,
     total_discount: 0,

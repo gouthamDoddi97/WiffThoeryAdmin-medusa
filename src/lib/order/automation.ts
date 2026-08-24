@@ -6,6 +6,7 @@ import {
   createOrderShipmentWorkflow,
   markOrderFulfillmentAsDeliveredWorkflow,
 } from "@medusajs/medusa/core-flows"
+import { syncShiprocketOrderTotals } from "./sync-shiprocket-order-totals"
 
 type OrderAutomationRow = {
   id: string
@@ -282,6 +283,12 @@ export async function runRazorpayOrderAutomation(
   const order = await loadOrderForAutomation(container, orderId)
   if (!order || !isRazorpayPrepaidOrder(order.metadata)) {
     return
+  }
+
+  try {
+    await syncShiprocketOrderTotals(container, orderId)
+  } catch (e) {
+    console.error("[order-automation] Shiprocket total sync failed", e)
   }
 
   try {

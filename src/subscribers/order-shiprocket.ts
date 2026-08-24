@@ -165,6 +165,8 @@ export default async function orderShiprocketHandler({
       ? Number(shiprocketSelection?.weight_kg)
       : computeCartWeightKg(order.items)
 
+  const shippingChargesInr = Math.round(Number(shiprocketSelection?.rate_inr ?? 0))
+
   try {
     const result = await createShiprocketOrder({
       medusaOrderId: order.id,
@@ -195,6 +197,7 @@ export default async function orderShiprocketHandler({
       paymentMethod: "Prepaid",
       shippingMethod: shippingMethodName,
       weightKg,
+      shippingChargesInr,
     })
 
     const shouldAssignAwb =
