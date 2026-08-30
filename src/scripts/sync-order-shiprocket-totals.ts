@@ -27,13 +27,15 @@ export default async function syncOrderShiprocketTotalsScript({
     filters: { display_id: String(displayId) },
   })
 
-  const order = orders?.[0] as { id?: string; display_id?: string } | undefined
+  const order = orders?.[0] as
+    | { id?: string; display_id?: string; metadata?: Record<string, unknown> | null }
+    | undefined
   if (!order?.id) {
     logger.error(`Order #${displayId} not found`)
     return
   }
 
-  const metadata = order.metadata as Record<string, unknown> | null | undefined
+  const metadata = order.metadata
   if (!metadata?.razorpay_charged_amount_inr && !(metadata?.shiprocket as { rate_inr?: number })?.rate_inr) {
     logger.warn(
       `Order #${displayId} has no shiprocket.rate_inr or razorpay_charged_amount_inr — set metadata first if needed`
