@@ -152,6 +152,11 @@ const GstFilingPage = () => {
       if (!res.ok) {
         throw new Error(data.message ?? "Failed to load GST data")
       }
+      if (!data || typeof data !== "object" || !data.summary) {
+        throw new Error(
+          "Unexpected GST preview response — try refreshing the page"
+        )
+      }
       setResult(data as GstFilingResponse)
     } catch (error) {
       toast.error(
@@ -335,7 +340,7 @@ const GstFilingPage = () => {
         }}
       />
 
-      {result && (
+      {result?.summary && (
         <>
           {!result.summary.totals_consistent &&
             !result.summary.skipped_ignore_sales &&

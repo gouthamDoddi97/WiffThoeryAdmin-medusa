@@ -6,8 +6,10 @@ import type {
 } from "@medusajs/framework"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
 import {
-  isCaAdminApiPathAllowed,
+  caAdminSafeGetResponse,
+  isCaAdminPassthroughPath,
   isCaAdminRole,
+  resolveAdminRequestPath,
 } from "../../lib/admin/roles"
 
 async function loadUserMetadata(
@@ -38,10 +40,11 @@ export async function restrictCaAdminAccess(
     return next()
   }
 
-  const path = req.path ?? req.url?.split("?")[0] ?? ""
-  const method = req.method ?? "GET"
+  const path = resolveAdminRequestPath(req)
+  const rawUrl = req.originalUrl ?? req.url ?? ""
+  const method = (req.method ?? "GET").toUpperCase()
 
-  if (isCaAdminApiPathAllowed(path, method)) {
+  if (isCaAdminPassthroughPath(path, method, rawUrl)) {
     return next()
   }
 
@@ -51,8 +54,14 @@ export async function restrictCaAdminAccess(
       return next()
     }
 
+    if (method === "GET") {
+      res.setHeader("Cache-Control", "no-store")
+      res.json(caAdminSafeGetResponse(path, rawUrl))
+      return
+    }
+
     res.status(403).json({
-      message: "This account is limited to GST filing.",
+      message: "This account only has access to GST Filing.",
       code: "ca_admin_restricted",
     })
   } catch {

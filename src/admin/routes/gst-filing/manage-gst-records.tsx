@@ -69,6 +69,9 @@ export function ManageGstRecordsPanel({
       if (!res.ok) {
         throw new Error(data.message ?? "Failed to load records")
       }
+      if (!Array.isArray(data?.records)) {
+        throw new Error("Unexpected records response — try refreshing the page")
+      }
 
       const payload = data as GstRecordsResponse
       setRecords(payload.records)

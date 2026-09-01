@@ -1,22 +1,25 @@
 import { defineWidgetConfig } from "@medusajs/admin-sdk"
+import "../lib/ca-access"
 import { useCaAccessGuard } from "../lib/ca-access"
 
-/** Runs CA redirect + sidebar hiding on common Medusa admin entry pages. */
-const CaAccessGuardWidget = () => {
+/**
+ * Ensures CA bootstrap runs on login and common landing pages.
+ * Module import above registers fetch intercept at admin startup.
+ */
+const CaAdminBootstrapWidget = () => {
   useCaAccessGuard()
   return null
 }
 
 export const config = defineWidgetConfig({
   zone: [
+    "login.before",
+    "login.after",
     "order.list.before",
     "product.list.before",
     "customer.list.before",
-    "inventory_item.list.before",
-    "promotion.list.before",
     "profile.details.before",
-    "login.after",
   ],
 })
 
-export default CaAccessGuardWidget
+export default CaAdminBootstrapWidget
