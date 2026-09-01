@@ -4,6 +4,10 @@ import { Badge, Button, Checkbox, Heading, Label, Text, toast } from "@medusajs/
 import { useCallback, useMemo, useState } from "react"
 import { useCaAccessGuard } from "../../lib/ca-access"
 import { ManageGstRecordsPanel } from "./manage-gst-records"
+import {
+  InputTaxExpenseDetailPanel,
+  type InputTaxExpenseLine,
+} from "./input-tax-expense-detail"
 
 type Gstr1Summary = {
   gstin: string
@@ -32,16 +36,7 @@ type Gstr1Summary = {
   input_tax_total_purchases_inr: number
 }
 
-type InputTaxLine = {
-  id: string
-  date: string
-  vendor: string | null
-  description: string
-  amount_inr: number
-  gst_amount_inr: number
-  taxable_value_inr: number
-  from_plan: boolean
-}
+type InputTaxLine = InputTaxExpenseLine
 
 type GstFilingResponse = {
   summary: Gstr1Summary
@@ -103,6 +98,18 @@ function buildQuery(
   return params.toString()
 }
 
+function triggerBrowserDownload(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement("a")
+  anchor.href = url
+  anchor.download = filename
+  anchor.style.display = "none"
+  document.body.appendChild(anchor)
+  anchor.click()
+  document.body.removeChild(anchor)
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+
 const GstFilingPage = () => {
   useCaAccessGuard()
 
@@ -111,7 +118,11 @@ const GstFilingPage = () => {
 
   const [monthValue, setMonthValue] = useState(defaultMonth)
   const [loading, setLoading] = useState(false)
+  const [downloading, setDownloading] = useState<"gstr1" | "full" | null>(null)
   const [result, setResult] = useState<GstFilingResponse | null>(null)
+  const [selectedExpense, setSelectedExpense] = useState<InputTaxLine | null>(
+    null
+  )
   const [ignoreSales, setIgnoreSales] = useState(false)
   const [ignoreOnlineSales, setIgnoreOnlineSales] = useState(false)
   const [ignoreOfflineSales, setIgnoreOfflineSales] = useState(false)
@@ -175,20 +186,36 @@ const GstFilingPage = () => {
         return
       }
 
-      setLoading(true)
+      setDownloading(mode)
       try {
         const res = await fetch(
           `/admin/gst-filing?${buildQuery(year, month, filters, mode)}`,
-          { credentials: "include" }
+          { credentials: "include", cache: "no-store" }
         )
+
+        const disposition = res.headers.get("Content-Disposition") ?? ""
+        const isAttachment = disposition.includes("attachment")
 
         if (!res.ok) {
           const data = await res.json().catch(() => ({}))
           throw new Error(data.message ?? "Download failed")
         }
 
+        if (!isAttachment) {
+          const data = await res.json().catch(() => null)
+          if (data?.message) {
+            throw new Error(String(data.message))
+          }
+          throw new Error(
+            "Download did not start — run Preview first or refresh the page"
+          )
+        }
+
         const blob = await res.blob()
-        const disposition = res.headers.get("Content-Disposition") ?? ""
+        if (!blob.size) {
+          throw new Error("Download file is empty")
+        }
+
         const match = disposition.match(/filename="([^"]+)"/)
         const fallback =
           mode === "gstr1"
@@ -197,12 +224,7 @@ const GstFilingPage = () => {
         const filename =
           match?.[1] ?? fallback ?? `gst_${monthValue.replace("-", "")}.json`
 
-        const url = URL.createObjectURL(blob)
-        const anchor = document.createElement("a")
-        anchor.href = url
-        anchor.download = filename
-        anchor.click()
-        URL.revokeObjectURL(url)
+        triggerBrowserDownload(blob, filename)
 
         toast.success(
           mode === "gstr1"
@@ -214,7 +236,7 @@ const GstFilingPage = () => {
           error instanceof Error ? error.message : "Download failed"
         )
       } finally {
-        setLoading(false)
+        setDownloading(null)
       }
     },
     [year, month, filters, monthValue, result?.filename, result?.full_report_filename]
@@ -312,15 +334,16 @@ const GstFilingPage = () => {
           </Button>
           <Button
             onClick={() => downloadFile("gstr1")}
-            isLoading={loading}
-            disabled={ignoreSales}
+            isLoading={downloading === "gstr1"}
+            disabled={ignoreSales || downloading !== null}
           >
             Download GSTR-1 JSON
           </Button>
           <Button
             variant="secondary"
             onClick={() => downloadFile("full")}
-            isLoading={loading}
+            isLoading={downloading === "full"}
+            disabled={downloading !== null}
           >
             Download full report
           </Button>
@@ -456,7 +479,8 @@ const GstFilingPage = () => {
             <Heading level="h2">Purchases — input GST (Budget expenses)</Heading>
             <Text size="small" className="text-ui-fg-muted">
               GST paid to suppliers from Budget → Expenses. Use this for GSTR-3B
-              ITC — not uploaded via GSTR-1 JSON.
+              ITC — not uploaded via GSTR-1 JSON. Click a row to view invoice
+              and full details.
             </Text>
 
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
@@ -496,7 +520,8 @@ const GstFilingPage = () => {
                     {result.input_tax.lines.map((line) => (
                       <tr
                         key={line.id}
-                        className="border-b border-ui-border-base/60"
+                        className="border-b border-ui-border-base/60 cursor-pointer hover:bg-ui-bg-subtle"
+                        onClick={() => setSelectedExpense(line)}
                       >
                         <td className="py-2 pr-3">{line.date}</td>
                         <td className="py-2 pr-3">{line.vendor ?? "—"}</td>
@@ -522,15 +547,38 @@ const GstFilingPage = () => {
         </>
       )}
 
+      <InputTaxExpenseDetailPanel
+        line={selectedExpense}
+        open={selectedExpense !== null}
+        onClose={() => setSelectedExpense(null)}
+      />
+
       <div className="rounded-lg border border-ui-border-base p-5">
         <Heading level="h2" className="mb-2">
           Upload steps (sales only)
         </Heading>
-        <ol className="list-decimal list-inside text-sm text-ui-fg-subtle space-y-1">
+        <ol className="list-decimal list-inside text-sm text-ui-fg-subtle space-y-1 mb-4">
           <li>Use <strong>Download GSTR-1 JSON</strong> for gst.gov.in offline upload</li>
           <li>Use <strong>Download full report</strong> for purchases + sales together</li>
           <li>Enter input GST from expenses manually in GSTR-3B on the portal</li>
         </ol>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            onClick={() => downloadFile("gstr1")}
+            isLoading={downloading === "gstr1"}
+            disabled={ignoreSales || downloading !== null}
+          >
+            Download GSTR-1 JSON
+          </Button>
+          <Button
+            variant="secondary"
+            onClick={() => downloadFile("full")}
+            isLoading={downloading === "full"}
+            disabled={downloading !== null}
+          >
+            Download full report
+          </Button>
+        </div>
       </div>
     </div>
   )

@@ -42,7 +42,7 @@ export async function buildGstFilingExport(
     loadExpensesForGstPeriod(container, input.year, input.month),
   ])
 
-  const inputTax = buildInputTaxSummary(expenses)
+  const inputTax = await buildInputTaxSummary(container, expenses)
   const { gstr1, summary } = buildGstr1FromOrders(orders, {
     gstin: config.gstin,
     year: input.year,
