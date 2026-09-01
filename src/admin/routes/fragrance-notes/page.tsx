@@ -2,6 +2,7 @@ import { defineRouteConfig } from "@medusajs/admin-sdk"
 import { Photo } from "@medusajs/icons"
 import { Button, Heading, Input, Label, toast } from "@medusajs/ui"
 import { useEffect, useRef, useState } from "react"
+import { useCaAccessGuard } from "../../lib/ca-access"
 
 type FragranceNote = {
   id: string
@@ -13,6 +14,8 @@ type FragranceNote = {
 }
 
 const FragranceNotesPage = () => {
+  useCaAccessGuard()
+
   const [notes, setNotes] = useState<FragranceNote[]>([])
   const [loading, setLoading] = useState(true)
   const [newName, setNewName] = useState("")

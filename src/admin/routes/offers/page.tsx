@@ -2,6 +2,7 @@ import { defineRouteConfig } from "@medusajs/admin-sdk"
 import { Sparkles } from "@medusajs/icons"
 import { Button, Heading, Input, Label, Switch, Textarea, toast } from "@medusajs/ui"
 import { useEffect, useRef, useState } from "react"
+import { useCaAccessGuard } from "../../lib/ca-access"
 
 // ── types ────────────────────────────────────────────────────────────────────
 
@@ -495,6 +496,8 @@ function SetForm({
 // ── main page ─────────────────────────────────────────────────────────────────
 
 const OffersPage = () => {
+  useCaAccessGuard()
+
   const [sets, setSets] = useState<FragranceSet[]>([])
   const [products, setProducts] = useState<AdminProduct[]>([])
   const [loading, setLoading] = useState(true)

@@ -2,6 +2,7 @@ import { defineRouteConfig } from "@medusajs/admin-sdk"
 import { DocumentText } from "@medusajs/icons"
 import { Badge, Button, Checkbox, Heading, Label, Text, toast } from "@medusajs/ui"
 import { useCallback, useMemo, useState } from "react"
+import { useCaAccessGuard } from "../../lib/ca-access"
 import { ManageGstRecordsPanel } from "./manage-gst-records"
 
 type Gstr1Summary = {
@@ -103,6 +104,8 @@ function buildQuery(
 }
 
 const GstFilingPage = () => {
+  useCaAccessGuard()
+
   const now = new Date()
   const defaultMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`
 

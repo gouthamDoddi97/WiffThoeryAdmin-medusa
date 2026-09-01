@@ -2,6 +2,7 @@ import { defineRouteConfig } from "@medusajs/admin-sdk"
 import { MapPin } from "@medusajs/icons"
 import { Button, Heading, Input, Label, toast } from "@medusajs/ui"
 import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCaAccessGuard } from "../../lib/ca-access"
 
 type Warehouse = {
   id: string
@@ -52,6 +53,8 @@ function warehouseLabel(location: Warehouse) {
 }
 
 const RetailStoresPage = () => {
+  useCaAccessGuard()
+
   const [stores, setStores] = useState<RetailStore[]>([])
   const [warehouses, setWarehouses] = useState<Warehouse[]>([])
   const [products, setProducts] = useState<

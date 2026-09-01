@@ -2,6 +2,7 @@ import { defineRouteConfig } from "@medusajs/admin-sdk"
 import { CurrencyDollar } from "@medusajs/icons"
 import { Button, Heading, Input, Label, toast } from "@medusajs/ui"
 import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCaAccessGuard } from "../../lib/ca-access"
 import { AttachmentField } from "./attachment-field"
 import { BudgetDashboardView } from "./dashboard"
 import { PlansTab } from "./plans-tab"
@@ -39,6 +40,8 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 const BudgetPage = () => {
+  useCaAccessGuard()
+
   const [data, setData] = useState<BudgetDashboardData | null>(null)
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState<BudgetTab>("dashboard")

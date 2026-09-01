@@ -2,6 +2,7 @@ import { defineRouteConfig } from "@medusajs/admin-sdk"
 import { BuildingStorefront } from "@medusajs/icons"
 import { Button, Heading, Input, Label, toast } from "@medusajs/ui"
 import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCaAccessGuard } from "../../lib/ca-access"
 import { computeOfflineSaleStats } from "./analytics"
 import { OfflineSalesDashboard } from "./dashboard"
 
@@ -977,6 +978,8 @@ function SaleForm({
 // ── main page ─────────────────────────────────────────────────────────────────
 
 const OfflineSalesPage = () => {
+  useCaAccessGuard()
+
   const [sales, setSales] = useState<OfflineSale[]>([])
   const [stockLocations, setStockLocations] = useState<StockLocation[]>([])
   const [retailStores, setRetailStores] = useState<RetailStore[]>([])

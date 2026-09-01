@@ -2,6 +2,7 @@ import { defineRouteConfig } from "@medusajs/admin-sdk"
 import { StarSolid } from "@medusajs/icons"
 import { Button, Heading, toast } from "@medusajs/ui"
 import { useEffect, useState } from "react"
+import { useCaAccessGuard } from "../../lib/ca-access"
 
 type Review = {
   id: string
@@ -32,6 +33,8 @@ function StarRow({ rating }: { rating: number }) {
 }
 
 const ReviewsPage = () => {
+  useCaAccessGuard()
+
   const [reviews, setReviews] = useState<Review[]>([])
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState<Tab>("pending")

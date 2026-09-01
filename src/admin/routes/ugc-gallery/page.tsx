@@ -2,6 +2,7 @@ import { defineRouteConfig } from "@medusajs/admin-sdk"
 import { Photo } from "@medusajs/icons"
 import { Button, Heading, Input, Label, toast } from "@medusajs/ui"
 import { useEffect, useRef, useState } from "react"
+import { useCaAccessGuard } from "../../lib/ca-access"
 
 type UgcPhoto = {
   id?: string
@@ -20,6 +21,8 @@ const buildDefaultSlots = (): UgcPhoto[] =>
   }))
 
 const UgcGalleryPage = () => {
+  useCaAccessGuard()
+
   const [slots, setSlots] = useState<UgcPhoto[]>(buildDefaultSlots())
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)

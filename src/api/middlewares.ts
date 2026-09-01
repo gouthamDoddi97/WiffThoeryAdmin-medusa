@@ -5,6 +5,7 @@ import {
 } from "./middlewares/filter-offline-store-products"
 import { requireStockLocationAddress } from "./middlewares/validate-stock-location-address"
 import { requirePackingLabelBeforeFulfillment } from "./middlewares/require-packing-label"
+import { restrictCaAdminAccess } from "./middlewares/restrict-ca-admin-access"
 
 const offlineProductMiddlewares = [
   ensureProductMetadataField,
@@ -13,6 +14,10 @@ const offlineProductMiddlewares = [
 
 export default defineMiddlewares({
   routes: [
+    {
+      matcher: "/admin/*",
+      middlewares: [restrictCaAdminAccess],
+    },
     {
       matcher: "/store/products*",
       middlewares: offlineProductMiddlewares,
