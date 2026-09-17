@@ -36,5 +36,8 @@ export const config: SubscriberConfig = {
     "product.created",
     "product.updated",
     "product.deleted",
+    "product-variant.created",
+    "product-variant.updated",
+    "product-variant.deleted",
   ],
 }

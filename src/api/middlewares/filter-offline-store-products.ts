@@ -3,12 +3,24 @@ import type {
   MedusaRequest,
   MedusaResponse,
 } from "@medusajs/framework/http"
-import { isProductOffline } from "../../utils/product-availability"
+import {
+  filterProductForOnlineStorefront,
+} from "../../utils/product-availability"
 
-type StoreProductPayload = { metadata?: Record<string, unknown> | null }
+type StoreProductPayload = {
+  metadata?: Record<string, unknown> | null
+  variants?: Array<{ metadata?: Record<string, unknown> | null }> | null
+}
 
 function stripOffline<T extends StoreProductPayload>(products: T[]): T[] {
-  return products.filter((product) => !isProductOffline(product))
+  const result: T[] = []
+  for (const product of products) {
+    const filtered = filterProductForOnlineStorefront(product)
+    if (filtered) {
+      result.push(filtered)
+    }
+  }
+  return result
 }
 
 function adjustCount(
@@ -47,11 +59,22 @@ function filterProductsPayload(body: Record<string, unknown>): Record<string, un
 }
 
 function filterSingleProductPayload(body: Record<string, unknown>): Record<string, unknown> | null {
-  if (!body.product || !isProductOffline(body.product as StoreProductPayload)) {
+  if (!body.product || typeof body.product !== "object") {
     return null
   }
 
-  return { __offline_product: true }
+  const product = body.product as StoreProductPayload
+  const filtered = filterProductForOnlineStorefront(product)
+
+  if (!filtered) {
+    return { __offline_product: true }
+  }
+
+  if (filtered !== product) {
+    return { ...body, product: filtered }
+  }
+
+  return null
 }
 
 function filterCategoriesPayload(body: Record<string, unknown>): Record<string, unknown> | null {
@@ -141,6 +164,9 @@ function filterStoreResponseBody(body: Record<string, unknown>): Record<string, 
   if (singleProduct?.__offline_product) {
     return { message: "Product not found", __status: 404 }
   }
+  if (singleProduct) {
+    return singleProduct
+  }
 
   return (
     filterProductsPayload(body) ??
@@ -150,6 +176,11 @@ function filterStoreResponseBody(body: Record<string, unknown>): Record<string, 
   )
 }
 
+function requestPath(req: MedusaRequest): string {
+  const raw = req.originalUrl ?? req.url ?? ""
+  return raw.split("?")[0] ?? ""
+}
+
 /** Ensure metadata is loaded so offline filtering can read wt_availability. */
 export function ensureProductMetadataField(
   req: MedusaRequest,
@@ -157,9 +188,35 @@ export function ensureProductMetadataField(
   next: MedusaNextFunction
 ) {
   const fields = req.query.fields
-  if (typeof fields === "string" && !fields.includes("metadata")) {
-    req.query.fields = `${fields},+metadata`
+  if (typeof fields !== "string") {
+    next()
+    return
   }
+
+  const path = requestPath(req)
+  let nextFields = fields
+
+  // Nested products on category/collection routes — not Product.variants on the category entity.
+  if (
+    path.startsWith("/store/product-categories") ||
+    path.startsWith("/store/collections")
+  ) {
+    if (!nextFields.includes("products.metadata")) {
+      nextFields = `${nextFields},+products.metadata`
+    }
+    if (!nextFields.includes("products.variants.metadata")) {
+      nextFields = `${nextFields},+products.variants.metadata`
+    }
+  } else if (path.startsWith("/store/products")) {
+    if (!nextFields.includes("metadata")) {
+      nextFields = `${nextFields},+metadata`
+    }
+    if (!nextFields.includes("variants.metadata")) {
+      nextFields = `${nextFields},+variants.metadata`
+    }
+  }
+
+  req.query.fields = nextFields
   next()
 }
 

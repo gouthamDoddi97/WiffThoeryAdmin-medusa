@@ -44,6 +44,7 @@ const ProductStorefrontAvailabilityWidget = ({ data }: { data: AdminProduct }) =
           <Heading level="h2">Storefront availability</Heading>
           <p className="text-xs text-ui-fg-subtle mt-1">
             Offline products stay in admin and offline sales, but are hidden from the website.
+            For a single SKU only, use Inventory → item → Storefront availability.
           </p>
         </div>
         <Badge size="small" color={availability === "offline" ? "orange" : "green"}>
